@@ -248,6 +248,18 @@ Falls back to <code>useId</code> when not provided.</p>
 </td>
     </tr>
     <tr>
+      <td>groupResizeBehavior</td>
+      <td><p>How should this Panel behave if the parent Group is resized?
+Defaults to <code>preserve-relative-size</code>.</p>
+<ul>
+<li><code>preserve-relative-size</code>: Retain the current relative size (as a percentage of the Group)</li>
+<li><code>preserve-pixel-size</code>: Retain its current size (in pixels)</li>
+</ul>
+<p>ℹ️ Panel min/max size constraints may impact this behavior.</p>
+<p>⚠️ A Group must contain at least one Panel with <code>preserve-relative-size</code> resize behavior.</p>
+</td>
+    </tr>
+    <tr>
       <td>maxSize</td>
       <td><p>Maximum size of Panel within its parent group; defaults to 100%.</p>
 </td>

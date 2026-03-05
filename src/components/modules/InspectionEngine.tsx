@@ -34,33 +34,33 @@ interface Question {
 
 const mockInspections: Inspection[] = [
   {
-    id: 'INS-2024-001',
+    id: 'INS-2026-001',
     directorate: 'Standard & Evaluation',
     type: 'Operational Readiness',
     evaluator: 'Maj. Johnson',
-    date: '2024-01-15',
+    date: '2026-01-15',
     score: 87,
     riskLevel: 'low',
     status: 'completed',
     questions: []
   },
   {
-    id: 'INS-2024-002',
+    id: 'INS-2026-002',
     directorate: 'Safety & Manual',
     type: 'Supply Chain Audit',
     evaluator: 'Capt. Smith',
-    date: '2024-01-18',
+    date: '2026-01-18',
     score: 72,
     riskLevel: 'medium',
     status: 'in_progress',
     questions: []
   },
   {
-    id: 'INS-2024-003',
+    id: 'INS-2026-003',
     directorate: 'Project Monitoring',
     type: 'Security Compliance',
     evaluator: 'Lt. Davis',
-    date: '2024-01-20',
+    date: '2026-01-20',
     score: 0,
     riskLevel: 'high',
     status: 'draft',
@@ -142,7 +142,7 @@ export default function InspectionEngine({ userRole }: InspectionEngineProps) {
     }
     
     const inspection: Inspection = {
-      id: `INS-2024-${String(inspections.length + 1).padStart(3, '0')}`,
+      id: `INS-2026-${String(inspections.length + 1).padStart(3, '0')}`,
       directorate: newInspection.directorate,
       type: newInspection.type,
       evaluator: 'Current User',

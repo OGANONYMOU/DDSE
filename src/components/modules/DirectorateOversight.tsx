@@ -12,8 +12,8 @@ const directorates = [
     name: 'Standard & Evaluation',
     formation: 'Alpha Command',
     complianceScore: 94,
-    lastInspection: '2024-01-15',
-    nextInspection: '2024-04-15',
+    lastInspection: '2026-01-15',
+    nextInspection: '2026-04-15',
     status: 'compliant',
     trends: [
       { month: 'Oct', score: 88 },
@@ -22,8 +22,8 @@ const directorates = [
       { month: 'Jan', score: 94 },
     ],
     recentReports: [
-      { id: 'RPT-001', type: 'Operational Readiness', date: '2024-01-15', score: 94 },
-      { id: 'RPT-002', type: 'Security Audit', date: '2023-10-20', score: 88 },
+      { id: 'RPT-001', type: 'Operational Readiness', date: '2026-01-15', score: 94 },
+      { id: 'RPT-002', type: 'Security Audit', date: '2026-10-20', score: 88 },
     ]
   },
   {
@@ -31,8 +31,8 @@ const directorates = [
     name: 'Safety & Manual',
     formation: 'Support Command',
     complianceScore: 78,
-    lastInspection: '2024-01-10',
-    nextInspection: '2024-03-10',
+    lastInspection: '2026-01-10',
+    nextInspection: '2026-03-10',
     status: 'at_risk',
     trends: [
       { month: 'Oct', score: 82 },
@@ -41,8 +41,8 @@ const directorates = [
       { month: 'Jan', score: 78 },
     ],
     recentReports: [
-      { id: 'RPT-003', type: 'Supply Chain Audit', date: '2024-01-10', score: 78 },
-      { id: 'RPT-004', type: 'Inventory Check', date: '2023-11-15', score: 82 },
+      { id: 'RPT-003', type: 'Supply Chain Audit', date: '2026-01-10', score: 78 },
+      { id: 'RPT-004', type: 'Inventory Check', date: '2026-11-15', score: 82 },
     ]
   },
   {
@@ -50,8 +50,8 @@ const directorates = [
     name: 'Project Monitoring',
     formation: 'Tech Command',
     complianceScore: 91,
-    lastInspection: '2024-01-20',
-    nextInspection: '2024-04-20',
+    lastInspection: '2026-01-20',
+    nextInspection: '2026-04-20',
     status: 'compliant',
     trends: [
       { month: 'Oct', score: 87 },
@@ -60,8 +60,8 @@ const directorates = [
       { month: 'Jan', score: 91 },
     ],
     recentReports: [
-      { id: 'RPT-005', type: 'Security Compliance', date: '2024-01-20', score: 91 },
-      { id: 'RPT-006', type: 'System Audit', date: '2023-12-10', score: 90 },
+      { id: 'RPT-005', type: 'Security Compliance', date: '2026-01-20', score: 91 },
+      { id: 'RPT-006', type: 'System Audit', date: '2026-12-10', score: 90 },
     ]
   },
   {
@@ -69,8 +69,8 @@ const directorates = [
     name: 'Standard & Evaluation',
     formation: 'Strategic Command',
     complianceScore: 96,
-    lastInspection: '2024-01-25',
-    nextInspection: '2024-04-25',
+    lastInspection: '2026-01-25',
+    nextInspection: '2026-04-25',
     status: 'excellent',
     trends: [
       { month: 'Oct', score: 93 },
@@ -79,8 +79,8 @@ const directorates = [
       { month: 'Jan', score: 96 },
     ],
     recentReports: [
-      { id: 'RPT-007', type: 'Data Security Audit', date: '2024-01-25', score: 96 },
-      { id: 'RPT-008', type: 'Access Control Review', date: '2023-12-20', score: 95 },
+      { id: 'RPT-007', type: 'Data Security Audit', date: '2026-01-25', score: 96 },
+      { id: 'RPT-008', type: 'Access Control Review', date: '2026-12-20', score: 95 },
     ]
   },
 ];

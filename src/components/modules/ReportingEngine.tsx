@@ -37,10 +37,10 @@ const riskDistribution = [
 ];
 
 const recentReports = [
-  { id: 'RPT-2024-001', title: 'Monthly Inspection Summary', type: 'Inspection', date: '2024-01-31', status: 'completed', size: '2.4 MB' },
-  { id: 'RPT-2024-002', title: 'Q4 Compliance Report', type: 'Compliance', date: '2024-01-15', status: 'completed', size: '5.1 MB' },
-  { id: 'RPT-2024-003', title: 'Armoury Audit Report', type: 'Audit', date: '2024-01-20', status: 'completed', size: '3.2 MB' },
-  { id: 'RPT-2024-004', title: 'Safety Assessment Summary', type: 'Safety', date: '2024-01-25', status: 'generating', size: '-' },
+  { id: 'RPT-2026-001', title: 'Monthly Inspection Summary', type: 'Inspection', date: '2026-01-31', status: 'completed', size: '2.4 MB' },
+  { id: 'RPT-2026-002', title: 'Q4 Compliance Report', type: 'Compliance', date: '2026-01-15', status: 'completed', size: '5.1 MB' },
+  { id: 'RPT-2026-003', title: 'Armoury Audit Report', type: 'Audit', date: '2026-01-20', status: 'completed', size: '3.2 MB' },
+  { id: 'RPT-2026-004', title: 'Safety Assessment Summary', type: 'Safety', date: '2026-01-25', status: 'generating', size: '-' },
 ];
 
 interface ReportingEngineProps {

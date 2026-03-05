@@ -27,32 +27,32 @@ interface User {
 const mockUsers: User[] = [
   {
     id: 'USR-001',
-    fullName: 'Major John Smith',
-    appointmentNumber: 'APP-78432',
+    fullName: 'Major James Okafor',
+    appointmentNumber: 'DSE-78432',
     rank: 'Major',
     directorate: 'Standard & Evaluation',
     phoneNumber: '+1-555-0101',
     email: 'john.smith@military.gov',
     role: 'super_admin',
     status: 'active',
-    lastLogin: '2024-01-23 14:30'
+    lastLogin: '2026-01-23 14:30'
   },
   {
     id: 'USR-002',
-    fullName: 'Captain Sarah Johnson',
-    appointmentNumber: 'APP-78433',
+    fullName: 'Captain Amaka Nwosu',
+    appointmentNumber: 'DSM-78433',
     rank: 'Captain',
     directorate: 'Safety & Manual',
     phoneNumber: '+1-555-0102',
     email: 'sarah.johnson@military.gov',
     role: 'evaluator',
     status: 'active',
-    lastLogin: '2024-01-23 10:15'
+    lastLogin: '2026-01-23 10:15'
   },
   {
     id: 'USR-003',
-    fullName: 'Lieutenant Michael Davis',
-    appointmentNumber: 'APP-78434',
+    fullName: 'Lieutenant Emeka Adeyemi',
+    appointmentNumber: 'DPM-78434',
     rank: 'Lieutenant',
     directorate: 'Project Monitoring',
     phoneNumber: '+1-555-0103',
@@ -62,27 +62,27 @@ const mockUsers: User[] = [
   },
   {
     id: 'USR-004',
-    fullName: 'Sergeant Emily Wilson',
-    appointmentNumber: 'APP-78435',
+    fullName: 'Sergeant Chioma Eze',
+    appointmentNumber: 'DSE-78435',
     rank: 'Sergeant',
     directorate: 'Standard & Evaluation',
     phoneNumber: '+1-555-0104',
     email: 'emily.wilson@military.gov',
     role: 'evaluator',
     status: 'active',
-    lastLogin: '2024-01-22 16:45'
+    lastLogin: '2026-01-22 16:45'
   },
   {
     id: 'USR-005',
-    fullName: 'Colonel Robert Brown',
-    appointmentNumber: 'APP-78436',
+    fullName: 'Colonel Ibrahim Aliyu',
+    appointmentNumber: 'DSE-78436',
     rank: 'Colonel',
     directorate: 'Standard & Evaluation',
     phoneNumber: '+1-555-0105',
     email: 'robert.brown@military.gov',
     role: 'directorate_officer',
     status: 'suspended',
-    lastLogin: '2024-01-15 09:00'
+    lastLogin: '2026-01-15 09:00'
   },
 ];
 
@@ -169,7 +169,7 @@ export default function UserManagement() {
                 </div>
                 <div>
                   <label className="text-sm text-[#A9B3C2]">Appointment</label>
-                  <Input className="bg-[#0B0F17] border-[rgba(242,245,250,0.12)]" placeholder="APP-XXXXX" />
+                  <Input className="bg-[#0B0F17] border-[rgba(242,245,250,0.12)]" placeholder="DSE/DSM/DPM-XXXXX" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

@@ -40,13 +40,13 @@ const mockProjects: Project[] = [
     progress: 75,
     budget: 2500000,
     spent: 1800000,
-    startDate: '2023-06-01',
-    endDate: '2024-06-01',
+    startDate: '2026-06-01',
+    endDate: '2026-06-01',
     milestones: [
-      { id: 'M1', name: 'Phase 1: Planning', dueDate: '2023-08-01', status: 'completed' },
-      { id: 'M2', name: 'Phase 2: Procurement', dueDate: '2023-11-01', status: 'completed' },
-      { id: 'M3', name: 'Phase 3: Installation', dueDate: '2024-03-01', status: 'pending' },
-      { id: 'M4', name: 'Phase 4: Testing', dueDate: '2024-05-01', status: 'pending' },
+      { id: 'M1', name: 'Phase 1: Planning', dueDate: '2026-08-01', status: 'completed' },
+      { id: 'M2', name: 'Phase 2: Procurement', dueDate: '2026-11-01', status: 'completed' },
+      { id: 'M3', name: 'Phase 3: Installation', dueDate: '2026-03-01', status: 'pending' },
+      { id: 'M4', name: 'Phase 4: Testing', dueDate: '2026-05-01', status: 'pending' },
     ]
   },
   {
@@ -57,12 +57,12 @@ const mockProjects: Project[] = [
     progress: 45,
     budget: 5000000,
     spent: 2400000,
-    startDate: '2023-04-01',
-    endDate: '2024-12-01',
+    startDate: '2026-04-01',
+    endDate: '2026-12-01',
     milestones: [
-      { id: 'M1', name: 'Vendor Selection', dueDate: '2023-06-01', status: 'completed' },
-      { id: 'M2', name: 'Initial Delivery', dueDate: '2023-10-01', status: 'overdue' },
-      { id: 'M3', name: 'Full Deployment', dueDate: '2024-08-01', status: 'pending' },
+      { id: 'M1', name: 'Vendor Selection', dueDate: '2026-06-01', status: 'completed' },
+      { id: 'M2', name: 'Initial Delivery', dueDate: '2026-10-01', status: 'overdue' },
+      { id: 'M3', name: 'Full Deployment', dueDate: '2026-08-01', status: 'pending' },
     ]
   },
   {
@@ -73,13 +73,13 @@ const mockProjects: Project[] = [
     progress: 90,
     budget: 1800000,
     spent: 1650000,
-    startDate: '2023-08-01',
-    endDate: '2024-02-01',
+    startDate: '2026-08-01',
+    endDate: '2026-02-01',
     milestones: [
-      { id: 'M1', name: 'Infrastructure Setup', dueDate: '2023-10-01', status: 'completed' },
-      { id: 'M2', name: 'Data Migration', dueDate: '2023-12-01', status: 'completed' },
-      { id: 'M3', name: 'Security Audit', dueDate: '2024-01-15', status: 'pending' },
-      { id: 'M4', name: 'Go Live', dueDate: '2024-02-01', status: 'pending' },
+      { id: 'M1', name: 'Infrastructure Setup', dueDate: '2026-10-01', status: 'completed' },
+      { id: 'M2', name: 'Data Migration', dueDate: '2026-12-01', status: 'completed' },
+      { id: 'M3', name: 'Security Audit', dueDate: '2026-01-15', status: 'pending' },
+      { id: 'M4', name: 'Go Live', dueDate: '2026-02-01', status: 'pending' },
     ]
   },
   {
@@ -90,12 +90,12 @@ const mockProjects: Project[] = [
     progress: 30,
     budget: 1200000,
     spent: 450000,
-    startDate: '2023-09-01',
-    endDate: '2024-05-01',
+    startDate: '2026-09-01',
+    endDate: '2026-05-01',
     milestones: [
-      { id: 'M1', name: 'Design Approval', dueDate: '2023-10-01', status: 'completed' },
-      { id: 'M2', name: 'Construction Start', dueDate: '2023-11-01', status: 'overdue' },
-      { id: 'M3', name: 'Phase 1 Complete', dueDate: '2024-02-01', status: 'pending' },
+      { id: 'M1', name: 'Design Approval', dueDate: '2026-10-01', status: 'completed' },
+      { id: 'M2', name: 'Construction Start', dueDate: '2026-11-01', status: 'overdue' },
+      { id: 'M3', name: 'Phase 1 Complete', dueDate: '2026-02-01', status: 'pending' },
     ]
   },
 ];

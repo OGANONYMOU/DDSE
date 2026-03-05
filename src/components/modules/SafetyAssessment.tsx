@@ -34,10 +34,10 @@ const mockHazards: HazardReport[] = [
     severity: 'medium',
     category: 'Physical Hazard',
     reportedBy: 'Sgt. Miller',
-    reportedDate: '2024-01-20',
+    reportedDate: '2026-01-20',
     status: 'in_review',
     description: 'Floor tiles are loose and uneven, creating tripping hazard near weapon storage area.',
-    mitigation: 'Maintenance scheduled for 2024-01-25'
+    mitigation: 'Maintenance scheduled for 2026-01-25'
   },
   {
     id: 'HZD-002',
@@ -46,7 +46,7 @@ const mockHazards: HazardReport[] = [
     severity: 'high',
     category: 'Safety Equipment',
     reportedBy: 'Lt. Johnson',
-    reportedDate: '2024-01-18',
+    reportedDate: '2026-01-18',
     status: 'open',
     description: 'Emergency exit lights not functioning in east corridor.',
   },
@@ -57,10 +57,10 @@ const mockHazards: HazardReport[] = [
     severity: 'critical',
     category: 'Chemical Hazard',
     reportedBy: 'Cpl. Davis',
-    reportedDate: '2024-01-15',
+    reportedDate: '2026-01-15',
     status: 'mitigated',
     description: 'Ventilation system failure in chemical storage room.',
-    mitigation: 'Temporary exhaust fans installed. Permanent repair completed on 2024-01-19.'
+    mitigation: 'Temporary exhaust fans installed. Permanent repair completed on 2026-01-19.'
   },
   {
     id: 'HZD-004',
@@ -69,7 +69,7 @@ const mockHazards: HazardReport[] = [
     severity: 'low',
     category: 'Documentation',
     reportedBy: 'Sgt. Wilson',
-    reportedDate: '2024-01-22',
+    reportedDate: '2026-01-22',
     status: 'closed',
     description: 'Safety procedure signs faded and illegible.',
     mitigation: 'New signage installed and verified.'

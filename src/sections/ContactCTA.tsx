@@ -195,7 +195,7 @@ export default function ContactCTA() {
               <a href="#" className="hover:text-[#F2F5FA] transition-colors">Support</a>
             </div>
             <p className="text-sm text-[#A9B3C2]">
-              © 2024 DDSE. All rights reserved.
+              © 2026 DDSE. All rights reserved.
             </p>
           </div>
         </div>

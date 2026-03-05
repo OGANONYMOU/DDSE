@@ -60,7 +60,7 @@ export default function AuthModal({ isOpen, onClose, onLogin }: AuthModalProps) 
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600"/>
                 <Input type="text" value={appointment} onChange={e=>setAppointment(e.target.value)}
-                  placeholder="e.g. APP-78432"
+                  placeholder="e.g. DSE-78432"
                   className="pl-9 bg-slate-950/60 border border-slate-800 text-white placeholder:text-slate-700 focus:border-sky-500/60"/>
               </div>
             </div>
