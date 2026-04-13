@@ -30,5 +30,14 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  "include": [
+    "src/main.tsx",
+    "src/App.tsx",
+    "src/components/AuthPage.tsx",
+    "src/components/CommandCenter.tsx",
+    "src/components/LoadingScreen.tsx",
+    "src/lib/**/*.ts",
+    "src/types/**/*.ts",
+    "src/types/**/*.d.ts"
+  ]
 }

@@ -216,7 +216,6 @@ export default function InspectionEngine({ userRole }: InspectionEngineProps) {
                       <SelectItem value="Standard & Evaluation">Standard & Evaluation</SelectItem>
                       <SelectItem value="Safety & Manual">Safety & Manual</SelectItem>
                       <SelectItem value="Project Monitoring">Project Monitoring</SelectItem>
-                      <SelectItem // removed</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
