@@ -3,6 +3,8 @@ import { v } from 'convex/values';
 import { roleCanApproveRegistrations, requiresApproval } from './lib/authz';
 
 const APPOINTMENT_RULE = /^[A-Z0-9/-]{5,24}$/i;
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 
 async function writeAudit(ctx, payload) {
   await ctx.db.insert('auditLogs', {
@@ -15,12 +17,18 @@ async function writeAudit(ctx, payload) {
     oldValue: payload.oldValue,
     newValue: payload.newValue,
     justification: payload.justification,
+    ipAddress: payload.ipAddress,
+    userAgent: payload.userAgent,
     createdAt: Date.now(),
   });
 }
 
 async function getSessionAuth(ctx, sessionToken) {
-  const session = await ctx.db.query('authSessions').withIndex('by_session_token', (q) => q.eq('sessionToken', sessionToken)).unique();
+  const session = await ctx.db
+    .query('authSessions')
+    .withIndex('by_session_token', (q) => q.eq('sessionToken', sessionToken))
+    .unique();
+
   if (!session || session.status !== 'active' || session.expiresAt < Date.now()) {
     return null;
   }
@@ -44,6 +52,8 @@ export const currentSession = query({
       session: {
         id: auth.session._id,
         expiresAt: auth.session.expiresAt,
+        lastSeenAt: auth.session.lastSeenAt,
+        sessionLabel: auth.session.sessionLabel,
       },
       user: {
         id: auth.user._id,
@@ -60,6 +70,11 @@ export const currentSession = query({
   },
 });
 
+export const sessionPrincipal = query({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, args) => getSessionAuth(ctx, args.sessionToken),
+});
+
 export const signOut = mutation({
   args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
@@ -68,6 +83,8 @@ export const signOut = mutation({
 
     await ctx.db.patch(auth.session._id, {
       status: 'revoked',
+      revokedAt: Date.now(),
+      revokedReason: 'logout',
       lastSeenAt: Date.now(),
     });
 
@@ -77,6 +94,115 @@ export const signOut = mutation({
       action: 'auth.logout',
       entityType: 'session',
       entityId: String(auth.session._id),
+    });
+
+    return { ok: true };
+  },
+});
+
+export const listSessions = query({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await getSessionAuth(ctx, args.sessionToken);
+    if (!auth) {
+      throw new Error('Authentication required.');
+    }
+
+    const sessions = await ctx.db
+      .query('authSessions')
+      .withIndex('by_user_id', (q) => q.eq('userId', auth.user._id))
+      .collect();
+
+    return sessions
+      .sort((left, right) => right.lastSeenAt - left.lastSeenAt)
+      .map((session) => ({
+        sessionId: session._id,
+        isCurrent: session.sessionToken === args.sessionToken,
+        status: session.status,
+        createdAt: session.createdAt,
+        lastSeenAt: session.lastSeenAt,
+        expiresAt: session.expiresAt,
+        revokedAt: session.revokedAt,
+        revokedReason: session.revokedReason,
+        sessionLabel: session.sessionLabel ?? 'Unlabelled device',
+        userAgent: session.userAgent,
+        ipAddress: session.ipAddress,
+      }));
+  },
+});
+
+export const revokeSession = mutation({
+  args: {
+    sessionToken: v.string(),
+    targetSessionId: v.id('authSessions'),
+  },
+  handler: async (ctx, args) => {
+    const auth = await getSessionAuth(ctx, args.sessionToken);
+    if (!auth) {
+      throw new Error('Authentication required.');
+    }
+
+    const targetSession = await ctx.db.get(args.targetSessionId);
+    if (!targetSession) {
+      throw new Error('Session not found.');
+    }
+
+    const canManage = targetSession.userId === auth.user._id || roleCanApproveRegistrations(auth.user.activeRoleCode);
+    if (!canManage) {
+      throw new Error('You are not authorized to revoke this session.');
+    }
+
+    await ctx.db.patch(targetSession._id, {
+      status: 'revoked',
+      revokedAt: Date.now(),
+      revokedReason: targetSession.userId === auth.user._id ? 'user_revoked' : 'administrator_revoked',
+      lastSeenAt: Date.now(),
+    });
+
+    await writeAudit(ctx, {
+      actorUserId: auth.user._id,
+      actorRoleCode: auth.user.activeRoleCode,
+      action: 'auth.session.revoked',
+      entityType: 'session',
+      entityId: String(targetSession._id),
+    });
+
+    return { ok: true };
+  },
+});
+
+export const revokeOtherSessions = mutation({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await getSessionAuth(ctx, args.sessionToken);
+    if (!auth) {
+      throw new Error('Authentication required.');
+    }
+
+    const sessions = await ctx.db
+      .query('authSessions')
+      .withIndex('by_user_id', (q) => q.eq('userId', auth.user._id))
+      .collect();
+
+    await Promise.all(
+      sessions
+        .filter((session) => session.sessionToken !== args.sessionToken && session.status === 'active')
+        .map((session) =>
+          ctx.db.patch(session._id, {
+            status: 'revoked',
+            revokedAt: Date.now(),
+            revokedReason: 'user_revoked_other_sessions',
+            lastSeenAt: Date.now(),
+          }),
+        ),
+    );
+
+    await writeAudit(ctx, {
+      actorUserId: auth.user._id,
+      actorRoleCode: auth.user.activeRoleCode,
+      action: 'auth.sessions.revoked_others',
+      entityType: 'user',
+      entityId: String(auth.user._id),
     });
 
     return { ok: true };
@@ -97,6 +223,10 @@ export const pendingApprovals = query({
     return Promise.all(
       pending.map(async (approval) => {
         const user = await ctx.db.get(approval.userId);
+        const profile = user
+          ? await ctx.db.query('userProfiles').withIndex('by_user_id', (q) => q.eq('userId', user._id)).unique()
+          : null;
+
         return {
           approvalId: approval._id,
           userId: approval.userId,
@@ -106,6 +236,7 @@ export const pendingApprovals = query({
           directorateCode: user?.directorateCode,
           formationCode: user?.formationCode,
           unitCode: user?.unitCode,
+          justification: profile?.notes,
         };
       }),
     );
@@ -135,6 +266,10 @@ export const approveRegistration = mutation({
       throw new Error('User record not found.');
     }
 
+    if (!args.notes?.trim() && (args.decision === 'rejected' || requiresApproval(user.requestedRoleCode))) {
+      throw new Error('Decision rationale is required for sensitive approvals.');
+    }
+
     await ctx.db.patch(approval._id, {
       status: args.decision,
       reviewerUserId: auth.user._id,
@@ -145,8 +280,20 @@ export const approveRegistration = mutation({
     await ctx.db.patch(user._id, {
       status: args.decision === 'approved' ? 'active' : 'rejected',
       activeRoleCode: args.decision === 'approved' ? user.requestedRoleCode : 'base_soldier',
+      privilegedRoleApprovedAt: args.decision === 'approved' ? Date.now() : undefined,
+      privilegedRoleApprovedByUserId: args.decision === 'approved' ? auth.user._id : undefined,
       updatedAt: Date.now(),
     });
+
+    const roleRequest = await ctx.db.query('roleRequests').withIndex('by_user_id', (q) => q.eq('userId', user._id)).unique();
+    if (roleRequest) {
+      await ctx.db.patch(roleRequest._id, {
+        status: args.decision,
+        decidedByUserId: auth.user._id,
+        decisionReason: args.notes,
+        decidedAt: Date.now(),
+      });
+    }
 
     await writeAudit(ctx, {
       actorUserId: auth.user._id,
@@ -155,6 +302,7 @@ export const approveRegistration = mutation({
       entityType: 'user',
       entityId: String(user._id),
       newValue: { status: args.decision === 'approved' ? 'active' : 'rejected' },
+      justification: args.notes,
     });
 
     return { ok: true };
@@ -168,8 +316,29 @@ export const getUserByAppointmentNumber = query({
       return null;
     }
 
-    return ctx.db.query('users').withIndex('by_appointment_number', (q) => q.eq('appointmentNumber', args.appointmentNumber)).unique();
+    return ctx.db
+      .query('users')
+      .withIndex('by_appointment_number', (q) => q.eq('appointmentNumber', args.appointmentNumber))
+      .unique();
   },
+});
+
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) =>
+    ctx.db.query('users').withIndex('by_email', (q) => q.eq('email', args.email)).unique(),
+});
+
+export const getUserByPhoneNumber = query({
+  args: { phoneNumber: v.string() },
+  handler: async (ctx, args) =>
+    ctx.db.query('users').withIndex('by_phone_number', (q) => q.eq('phoneNumber', args.phoneNumber)).unique(),
+});
+
+export const getUserProfileByIdentityNumber = query({
+  args: { identityNumber: v.string() },
+  handler: async (ctx, args) =>
+    ctx.db.query('userProfiles').withIndex('by_identity_number', (q) => q.eq('identityNumber', args.identityNumber)).unique(),
 });
 
 export const getUserById = query({
@@ -224,6 +393,11 @@ export const createPendingUser = mutation({
       phoneVerifiedAt: undefined,
       mfaRequired: requiresApproval(args.requestedRoleCode),
       failedLoginCount: 0,
+      lockedUntil: undefined,
+      lastFailedLoginAt: undefined,
+      suspiciousActivityAt: undefined,
+      privilegedRoleApprovedAt: undefined,
+      privilegedRoleApprovedByUserId: undefined,
       lastLoginAt: undefined,
       createdAt: args.now,
       updatedAt: args.now,
@@ -269,6 +443,7 @@ export const createVerificationChallenge = mutation({
     destination: v.string(),
     codeHash: v.string(),
     expiresAt: v.number(),
+    maxAttempts: v.number(),
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) =>
@@ -282,6 +457,8 @@ export const createVerificationChallenge = mutation({
       resetTokenHash: undefined,
       expiresAt: args.expiresAt,
       consumedAt: undefined,
+      failedAttempts: 0,
+      maxAttempts: args.maxAttempts,
       metadata: args.metadata,
       createdAt: Date.now(),
     }),
@@ -298,7 +475,32 @@ export const refreshChallengeCodeInternal = mutation({
       codeHash: args.codeHash,
       expiresAt: args.expiresAt,
       consumedAt: undefined,
+      failedAttempts: 0,
     });
+  },
+});
+
+export const registerChallengeAttemptInternal = mutation({
+  args: {
+    challengeId: v.id('verificationChallenges'),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const challenge = await ctx.db.get(args.challengeId);
+    if (!challenge) {
+      return { attemptsRemaining: 0 };
+    }
+
+    const failedAttempts = challenge.failedAttempts + 1;
+    const consumedAt = failedAttempts >= challenge.maxAttempts ? args.now : challenge.consumedAt;
+    await ctx.db.patch(args.challengeId, {
+      failedAttempts,
+      consumedAt,
+    });
+
+    return {
+      attemptsRemaining: Math.max(0, challenge.maxAttempts - failedAttempts),
+    };
   },
 });
 
@@ -355,6 +557,8 @@ export const updatePasswordInternal = mutation({
       passwordHash: args.passwordHash,
       updatedAt: args.now,
       failedLoginCount: 0,
+      lockedUntil: undefined,
+      lastFailedLoginAt: undefined,
     });
     await ctx.db.patch(args.challengeId, { consumedAt: args.now });
   },
@@ -367,6 +571,7 @@ export const storeSessionInternal = mutation({
     userAgent: v.optional(v.string()),
     ipAddress: v.optional(v.string()),
     expiresAt: v.number(),
+    sessionLabel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert('authSessions', {
@@ -376,14 +581,38 @@ export const storeSessionInternal = mutation({
       expiresAt: args.expiresAt,
       createdAt: Date.now(),
       lastSeenAt: Date.now(),
+      lastElevatedAt: Date.now(),
+      revokedAt: undefined,
+      revokedReason: undefined,
+      sessionLabel: args.sessionLabel,
       ipAddress: args.ipAddress,
       userAgent: args.userAgent,
     });
 
     await ctx.db.patch(args.userId, {
       failedLoginCount: 0,
+      lockedUntil: undefined,
+      lastFailedLoginAt: undefined,
       lastLoginAt: Date.now(),
       updatedAt: Date.now(),
+    });
+  },
+});
+
+export const touchSessionInternal = mutation({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, args) => {
+    const session = await ctx.db
+      .query('authSessions')
+      .withIndex('by_session_token', (q) => q.eq('sessionToken', args.sessionToken))
+      .unique();
+
+    if (!session || session.status !== 'active') {
+      return;
+    }
+
+    await ctx.db.patch(session._id, {
+      lastSeenAt: Date.now(),
     });
   },
 });
@@ -392,12 +621,19 @@ export const incrementFailedLoginInternal = mutation({
   args: { userId: v.id('users') },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
-    if (!user) return;
+    if (!user) return { lockedUntil: undefined, failedLoginCount: 0 };
 
+    const failedLoginCount = user.failedLoginCount + 1;
+    const lockedUntil = failedLoginCount >= LOCKOUT_THRESHOLD ? Date.now() + LOCKOUT_WINDOW_MS : user.lockedUntil;
     await ctx.db.patch(args.userId, {
-      failedLoginCount: user.failedLoginCount + 1,
+      failedLoginCount,
+      lockedUntil,
+      lastFailedLoginAt: Date.now(),
+      suspiciousActivityAt: lockedUntil ? Date.now() : user.suspiciousActivityAt,
       updatedAt: Date.now(),
     });
+
+    return { lockedUntil, failedLoginCount };
   },
 });
 
@@ -412,6 +648,8 @@ export const recordAuditInternal = mutation({
     oldValue: v.optional(v.any()),
     newValue: v.optional(v.any()),
     justification: v.optional(v.string()),
+    ipAddress: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await writeAudit(ctx, args);

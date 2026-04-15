@@ -3,6 +3,7 @@ import { Toaster } from 'sonner';
 import AuthPage from './components/AuthPage';
 import CommandCenter from './components/CommandCenter';
 import LoadingScreen from './components/LoadingScreen';
+import { appConfig } from './lib/sessionBroker';
 import { bootstrapPlatform, restoreSession, signOut } from './lib/api';
 import type { PlatformUser } from './types/platform';
 
@@ -11,6 +12,11 @@ function App() {
   const [user, setUser] = useState<PlatformUser | null>(null);
 
   useEffect(() => {
+    if (!appConfig.isValid) {
+      setStatus('auth');
+      return;
+    }
+
     let mounted = true;
 
     Promise.resolve()
@@ -49,7 +55,21 @@ function App() {
         }}
       />
       {status === 'loading' && <LoadingScreen onComplete={() => undefined} />}
-      {status === 'auth' && (
+      {!appConfig.isValid && (
+        <div className="flex min-h-screen items-center justify-center px-6">
+          <div className="max-w-2xl rounded-3xl border border-rose-500/20 bg-slate-950/85 p-8">
+            <p className="text-xs uppercase tracking-[0.3em] text-rose-300/80">Configuration Required</p>
+            <h1 className="mt-2 text-2xl font-black text-white">Local environment is incomplete</h1>
+            <p className="mt-4 text-sm text-slate-300">
+              Add the missing variables to `.env.local` before starting DDSE locally.
+            </p>
+            <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-sm text-slate-200">
+              {appConfig.missing.join(', ')}
+            </div>
+          </div>
+        </div>
+      )}
+      {status === 'auth' && appConfig.isValid && (
         <AuthPage
           onAuthenticated={(sessionUser) => {
             setUser(sessionUser);

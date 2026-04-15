@@ -55,6 +55,18 @@ export interface DashboardSummary {
   }>;
   severityDistribution: Record<string, number>;
   approvalQueue: number;
+  correctiveActionAging: {
+    overdue: number;
+    dueSoon: number;
+  };
+  approvalSummary: {
+    pending: number;
+  };
+  comparisons: {
+    directorates: Array<{ key: string; inspections: number; overdue: number; highRisk: number; averageScore: number }>;
+    formations: Array<{ key: string; inspections: number; overdue: number; highRisk: number; averageScore: number }>;
+    units: Array<{ key: string; inspections: number; overdue: number; highRisk: number; averageScore: number }>;
+  };
   recentActivity: Array<{
     id: string;
     action: string;
@@ -98,6 +110,7 @@ export interface InspectionDetail {
     _id: string;
     title: string;
     moduleCode: string;
+    classification: string;
     status: string;
     scoreOverall: number;
     complianceBand: string;
@@ -124,6 +137,9 @@ export interface InspectionDetail {
         _id: string;
         fileName: string;
         contentType: string;
+        classification: string;
+        contentHash?: string;
+        watermarkLabel?: string;
       }>;
     }>;
   }>;
@@ -132,4 +148,18 @@ export interface InspectionDetail {
   approvals: Array<{ _id: string; decision: string; comments?: string; createdAt: number }>;
   reviewComments: Array<{ _id: string; findingId?: string; parentCommentId?: string; actorRoleCode: string; body: string; createdAt: number; resolvedAt?: number }>;
   auditLogs: Array<{ _id: string; action: string; createdAt: number; actorRoleCode?: string }>;
+}
+
+export interface SessionInventoryEntry {
+  sessionId: string;
+  isCurrent: boolean;
+  status: string;
+  createdAt: number;
+  lastSeenAt: number;
+  expiresAt: number;
+  revokedAt?: number;
+  revokedReason?: string;
+  sessionLabel?: string;
+  userAgent?: string;
+  ipAddress?: string;
 }

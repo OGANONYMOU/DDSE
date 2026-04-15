@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, LockKeyhole, MessageSquareCode, Shield, User2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { completeSignIn, getRegistrationFormOptions, registerPersonnel, requestPasswordReset, resendChallenge, resetPassword, verifyPasswordReset, verifyRegistration, verifySignIn } from '../lib/api';
+import { appConfig } from '../lib/sessionBroker';
 import type { PlatformUser, RegistrationFormOptions } from '../types/platform';
 
 type View = 'sign_in' | 'register' | 'otp' | 'forgot' | 'reset';
@@ -62,7 +63,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     setIsBusy(true);
     try {
       const result = await completeSignIn(signInForm);
-      if ('sessionToken' in result) {
+      if (result.user && !result.requiresOtp) {
         onAuthenticated(result.user);
         toast.success('Secure session established.');
       } else if (result.requiresOtp && result.challengeId) {
@@ -74,6 +75,9 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
         });
         setResendCooldown(60);
         setView('otp');
+        if (result.previewCode && appConfig.devOtpPreview) {
+          toast.info(`Dev OTP preview: ${result.previewCode}`);
+        }
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Sign in failed.');
@@ -102,6 +106,9 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
       setResendCooldown(60);
       setView('otp');
       toast.success('Registration submitted. Verify the one-time code to continue.');
+      if (result.previewCode && appConfig.devOtpPreview) {
+        toast.info(`Dev OTP preview: ${result.previewCode}`);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Registration failed.');
     } finally {
@@ -114,15 +121,20 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     setIsBusy(true);
     try {
       const result = await requestPasswordReset(forgotAppointmentNumber);
-      setChallengeContext({
-        purpose: 'password_reset',
-        challengeId: result.challengeId,
-        destinationMasked: result.destinationMasked,
-        appointmentNumber: forgotAppointmentNumber,
-      });
-      setResendCooldown(60);
-      setView('otp');
-      toast.success('Password reset challenge dispatched.');
+      toast.success(result.message);
+      if (result.challengeId) {
+        setChallengeContext({
+          purpose: 'password_reset',
+          challengeId: result.challengeId,
+          destinationMasked: result.destinationMasked,
+          appointmentNumber: forgotAppointmentNumber,
+        });
+        setResendCooldown(60);
+        setView('otp');
+        if (result.previewCode && appConfig.devOtpPreview) {
+          toast.info(`Dev OTP preview: ${result.previewCode}`);
+        }
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not start password reset.');
     } finally {
@@ -295,6 +307,9 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
                         setChallengeContext((current) => current ? { ...current, destinationMasked: result.destinationMasked } : current);
                         setResendCooldown(60);
                         toast.success('A new verification code has been sent.');
+                        if (result.previewCode && appConfig.devOtpPreview) {
+                          toast.info(`Dev OTP preview: ${result.previewCode}`);
+                        }
                       })
                       .catch((error: Error) => toast.error(error.message));
                   }}

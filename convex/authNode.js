@@ -3,11 +3,48 @@
 import bcrypt from 'bcryptjs';
 import { action } from './_generated/server';
 import { v } from 'convex/values';
-import { requiresApproval } from './lib/authz';
+import { requiresApproval, validateRoleEligibility } from './lib/authz';
 import { randomCode, randomToken, sha256 } from './lib/security';
 
 const PASSWORD_RULE = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 const APPOINTMENT_RULE = /^[A-Z0-9/-]{5,24}$/i;
+const PHONE_RULE = /^\+?[0-9]{10,15}$/;
+const EMAIL_RULE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GENERIC_AUTH_ERROR = 'Invalid credentials or account unavailable.';
+const GENERIC_RESET_MESSAGE = 'If an active account exists, a reset challenge has been dispatched.';
+
+function isDevOtpPreviewEnabled() {
+  return process.env.DDSE_ENABLE_DEV_OTP_PREVIEW === 'true';
+}
+
+function normalizeAppointmentNumber(value) {
+  return value.trim().toUpperCase();
+}
+
+function sessionLabelFromUserAgent(userAgent) {
+  if (!userAgent) {
+    return 'Unclassified device';
+  }
+
+  if (userAgent.includes('Windows')) return 'Windows endpoint';
+  if (userAgent.includes('Mac OS')) return 'macOS endpoint';
+  if (userAgent.includes('Android')) return 'Android device';
+  if (userAgent.includes('iPhone') || userAgent.includes('iPad')) return 'iOS device';
+  return 'Operational endpoint';
+}
+
+async function failChallenge(ctx, challengeId) {
+  const result = await ctx.runMutation('auth:registerChallengeAttemptInternal', {
+    challengeId,
+    now: Date.now(),
+  });
+
+  if (result.attemptsRemaining > 0) {
+    throw new Error(`Verification code is invalid. ${result.attemptsRemaining} attempt(s) remaining.`);
+  }
+
+  throw new Error('Verification challenge is no longer valid.');
+}
 
 export const register = action({
   args: {
@@ -36,11 +73,43 @@ export const register = action({
     if (args.password !== args.confirmPassword) {
       throw new Error('Password confirmation does not match.');
     }
+    if (!PHONE_RULE.test(args.phoneNumber)) {
+      throw new Error('Phone number format is invalid.');
+    }
+    if (args.email && !EMAIL_RULE.test(args.email)) {
+      throw new Error('Email address format is invalid.');
+    }
+    if (requiresApproval(args.requestedRoleCode) && !args.justification?.trim()) {
+      throw new Error('Privileged role requests require operational justification.');
+    }
 
-    const appointmentNumber = args.appointmentNumber.toUpperCase();
+    const appointmentNumber = normalizeAppointmentNumber(args.appointmentNumber);
+    const catalogs = await ctx.runQuery('catalog:registrationFormOptions', {});
+    const selectedUnit = catalogs.units.find((unit) => unit.code === args.unitCode);
+    if (!selectedUnit || selectedUnit.formationCode !== args.formationCode) {
+      throw new Error('Unit and formation selection is inconsistent.');
+    }
+    if (!catalogs.directorates.some((directorate) => directorate.code === args.directorateCode)) {
+      throw new Error('Directorate selection is invalid.');
+    }
+
+    const eligibilityError = validateRoleEligibility(args.requestedRoleCode, args.directorateCode);
+    if (eligibilityError) {
+      throw new Error(eligibilityError);
+    }
+
     const existingUser = await ctx.runQuery('auth:getUserByAppointmentNumber', { appointmentNumber });
     if (existingUser) {
-      throw new Error('An account with this appointment number already exists.');
+      throw new Error('Registration could not be processed with the submitted identity details.');
+    }
+    if (args.email && (await ctx.runQuery('auth:getUserByEmail', { email: args.email.trim().toLowerCase() }))) {
+      throw new Error('Registration could not be processed with the submitted identity details.');
+    }
+    if (await ctx.runQuery('auth:getUserByPhoneNumber', { phoneNumber: args.phoneNumber.trim() })) {
+      throw new Error('Registration could not be processed with the submitted identity details.');
+    }
+    if (args.identityNumber && (await ctx.runQuery('auth:getUserProfileByIdentityNumber', { identityNumber: args.identityNumber.trim().toUpperCase() }))) {
+      throw new Error('Registration could not be processed with the submitted identity details.');
     }
 
     const now = Date.now();
@@ -48,6 +117,9 @@ export const register = action({
     const userId = await ctx.runMutation('auth:createPendingUser', {
       ...args,
       appointmentNumber,
+      email: args.email?.trim().toLowerCase(),
+      phoneNumber: args.phoneNumber.trim(),
+      identityNumber: args.identityNumber?.trim().toUpperCase(),
       passwordHash,
       now,
     });
@@ -58,16 +130,17 @@ export const register = action({
       appointmentNumber,
       channel: args.email ? 'email' : 'sms',
       purpose: 'registration',
-      destination: args.email ?? args.phoneNumber,
+      destination: args.email?.trim().toLowerCase() ?? args.phoneNumber.trim(),
       codeHash: await sha256(challengeCode),
       expiresAt: now + 10 * 60 * 1000,
+      maxAttempts: 5,
       metadata: { requestedRoleCode: args.requestedRoleCode },
     });
 
     await ctx.runAction('otp:sendOtp', {
       userId,
       appointmentNumber,
-      destination: args.email ?? args.phoneNumber,
+      destination: args.email?.trim().toLowerCase() ?? args.phoneNumber.trim(),
       channel: args.email ? 'email' : 'sms',
       purpose: 'registration',
       code: challengeCode,
@@ -85,8 +158,9 @@ export const register = action({
       nextStep: 'verify_registration',
       challengeId,
       destinationMasked: args.email
-        ? args.email.replace(/(.{2}).+(@.+)/, '$1***$2')
+        ? args.email.trim().toLowerCase().replace(/(.{2}).+(@.+)/, '$1***$2')
         : `${args.phoneNumber.slice(0, 4)}***${args.phoneNumber.slice(-2)}`,
+      previewCode: isDevOtpPreviewEnabled() ? challengeCode : undefined,
     };
   },
 });
@@ -105,7 +179,7 @@ export const verifyRegistration = action({
       throw new Error('Registration challenge has expired.');
     }
     if ((await sha256(args.code)) !== challenge.codeHash) {
-      throw new Error('Verification code is invalid.');
+      await failChallenge(ctx, args.challengeId);
     }
 
     const user = await ctx.runQuery('auth:getUserById', { userId: challenge.userId });
@@ -144,26 +218,34 @@ export const signIn = action({
     ipAddress: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const appointmentNumber = args.appointmentNumber.toUpperCase();
+    const appointmentNumber = normalizeAppointmentNumber(args.appointmentNumber);
     const user = await ctx.runQuery('auth:getUserByAppointmentNumber', { appointmentNumber });
     if (!user) {
-      throw new Error('Invalid credentials.');
+      throw new Error(GENERIC_AUTH_ERROR);
+    }
+    if (user.lockedUntil && user.lockedUntil > Date.now()) {
+      throw new Error('Account access is temporarily locked due to repeated failures.');
     }
     if (user.status !== 'active') {
-      throw new Error('Account is not active.');
+      throw new Error(GENERIC_AUTH_ERROR);
     }
 
     const passwordMatches = await bcrypt.compare(args.password, user.passwordHash);
     if (!passwordMatches) {
-      await ctx.runMutation('auth:incrementFailedLoginInternal', { userId: user._id });
+      const failureState = await ctx.runMutation('auth:incrementFailedLoginInternal', { userId: user._id });
       await ctx.runMutation('auth:recordAuditInternal', {
         action: 'auth.login.failed',
         entityType: 'user',
         entityId: String(user._id),
         actorUserId: user._id,
         actorRoleCode: user.activeRoleCode,
+        ipAddress: args.ipAddress,
+        userAgent: args.userAgent,
+        newValue: failureState,
       });
-      throw new Error('Invalid credentials.');
+      throw new Error(failureState.lockedUntil && failureState.lockedUntil > Date.now()
+        ? 'Account access is temporarily locked due to repeated failures.'
+        : GENERIC_AUTH_ERROR);
     }
 
     if (user.mfaRequired) {
@@ -176,6 +258,7 @@ export const signIn = action({
         destination: user.email ?? user.phoneNumber,
         codeHash: await sha256(challengeCode),
         expiresAt: Date.now() + 10 * 60 * 1000,
+        maxAttempts: 5,
         metadata: {
           userAgent: args.userAgent,
           ipAddress: args.ipAddress,
@@ -196,6 +279,7 @@ export const signIn = action({
         destinationMasked: user.email
           ? user.email.replace(/(.{2}).+(@.+)/, '$1***$2')
           : `${user.phoneNumber.slice(0, 4)}***${user.phoneNumber.slice(-2)}`,
+        previewCode: isDevOtpPreviewEnabled() ? challengeCode : undefined,
       };
     }
 
@@ -223,7 +307,7 @@ export const verifySignIn = action({
       throw new Error('Sign in challenge has expired.');
     }
     if ((await sha256(args.code)) !== challenge.codeHash) {
-      throw new Error('One-time passcode is invalid.');
+      await failChallenge(ctx, args.challengeId);
     }
 
     await ctx.runMutation('auth:consumeChallengeInternal', {
@@ -244,10 +328,14 @@ export const requestPasswordReset = action({
     appointmentNumber: v.string(),
   },
   handler: async (ctx, args) => {
-    const appointmentNumber = args.appointmentNumber.toUpperCase();
+    const appointmentNumber = normalizeAppointmentNumber(args.appointmentNumber);
     const user = await ctx.runQuery('auth:getUserByAppointmentNumber', { appointmentNumber });
     if (!user || user.status !== 'active') {
-      throw new Error('Active account not found for password reset.');
+      return {
+        challengeId: null,
+        destinationMasked: 'secured channel',
+        message: GENERIC_RESET_MESSAGE,
+      };
     }
 
     const challengeCode = randomCode();
@@ -259,6 +347,7 @@ export const requestPasswordReset = action({
       destination: user.email ?? user.phoneNumber,
       codeHash: await sha256(challengeCode),
       expiresAt: Date.now() + 10 * 60 * 1000,
+      maxAttempts: 5,
       metadata: {},
     });
 
@@ -283,6 +372,8 @@ export const requestPasswordReset = action({
       destinationMasked: user.email
         ? user.email.replace(/(.{2}).+(@.+)/, '$1***$2')
         : `${user.phoneNumber.slice(0, 4)}***${user.phoneNumber.slice(-2)}`,
+      message: GENERIC_RESET_MESSAGE,
+      previewCode: isDevOtpPreviewEnabled() ? challengeCode : undefined,
     };
   },
 });
@@ -301,7 +392,7 @@ export const verifyPasswordReset = action({
       throw new Error('Password reset challenge has expired.');
     }
     if ((await sha256(args.code)) !== challenge.codeHash) {
-      throw new Error('Verification code is invalid.');
+      await failChallenge(ctx, args.challengeId);
     }
 
     const resetToken = randomToken();
@@ -352,6 +443,7 @@ export const resendChallenge = action({
       destinationMasked: challenge.channel === 'email'
         ? challenge.destination.replace(/(.{2}).+(@.+)/, '$1***$2')
         : `${challenge.destination.slice(0, 4)}***${challenge.destination.slice(-2)}`,
+      previewCode: isDevOtpPreviewEnabled() ? code : undefined,
     };
   },
 });
@@ -371,10 +463,10 @@ export const resetPassword = action({
       throw new Error('Password confirmation does not match.');
     }
 
-    const appointmentNumber = args.appointmentNumber.toUpperCase();
+    const appointmentNumber = normalizeAppointmentNumber(args.appointmentNumber);
     const user = await ctx.runQuery('auth:getUserByAppointmentNumber', { appointmentNumber });
     if (!user) {
-      throw new Error('User account not found.');
+      throw new Error('Reset token is invalid or expired.');
     }
 
     const resetTokenHash = await sha256(args.resetToken);
@@ -424,6 +516,7 @@ export const createSessionInternal = action({
       userAgent: args.userAgent,
       ipAddress: args.ipAddress,
       expiresAt,
+      sessionLabel: sessionLabelFromUserAgent(args.userAgent),
     });
 
     const user = await ctx.runQuery('auth:getUserById', { userId: args.userId });
@@ -433,6 +526,8 @@ export const createSessionInternal = action({
       entityId: String(args.userId),
       actorUserId: args.userId,
       actorRoleCode: user.activeRoleCode,
+      ipAddress: args.ipAddress,
+      userAgent: args.userAgent,
     });
 
     return {

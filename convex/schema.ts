@@ -20,12 +20,18 @@ export default defineSchema({
     phoneVerifiedAt: v.optional(v.number()),
     mfaRequired: v.boolean(),
     failedLoginCount: v.number(),
+    lockedUntil: v.optional(v.number()),
+    lastFailedLoginAt: v.optional(v.number()),
+    suspiciousActivityAt: v.optional(v.number()),
+    privilegedRoleApprovedAt: v.optional(v.number()),
+    privilegedRoleApprovedByUserId: v.optional(v.id("users")),
     lastLoginAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_appointment_number", ["appointmentNumber"])
     .index("by_email", ["email"])
+    .index("by_phone_number", ["phoneNumber"])
     .index("by_status", ["status"]),
 
   userProfiles: defineTable({
@@ -35,7 +41,9 @@ export default defineSchema({
     notes: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_user_id", ["userId"]),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_identity_number", ["identityNumber"]),
 
   rankCatalog: defineTable({
     code: v.string(),
@@ -89,6 +97,10 @@ export default defineSchema({
     expiresAt: v.number(),
     createdAt: v.number(),
     lastSeenAt: v.number(),
+    lastElevatedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    revokedReason: v.optional(v.string()),
+    sessionLabel: v.optional(v.string()),
     ipAddress: v.optional(v.string()),
     userAgent: v.optional(v.string()),
   })
@@ -105,6 +117,8 @@ export default defineSchema({
     resetTokenHash: v.optional(v.string()),
     expiresAt: v.number(),
     consumedAt: v.optional(v.number()),
+    failedAttempts: v.number(),
+    maxAttempts: v.number(),
     metadata: v.optional(v.any()),
     createdAt: v.number(),
   }).index("by_purpose", ["purpose"]),
@@ -171,6 +185,9 @@ export default defineSchema({
     submittedAt: v.optional(v.number()),
     reviewedAt: v.optional(v.number()),
     approvedAt: v.optional(v.number()),
+    reopenedAt: v.optional(v.number()),
+    lastDecisionAt: v.optional(v.number()),
+    lastDecisionByUserId: v.optional(v.id("users")),
     updatedAt: v.number(),
     createdAt: v.number(),
   })
@@ -229,6 +246,12 @@ export default defineSchema({
     contentType: v.string(),
     sizeBytes: v.number(),
     classification: v.string(),
+    uploadedByRoleCode: v.string(),
+    contentHash: v.optional(v.string()),
+    provenance: v.optional(v.any()),
+    watermarkLabel: v.optional(v.string()),
+    lastAccessedAt: v.optional(v.number()),
+    accessCount: v.number(),
     createdAt: v.number(),
   }).index("by_inspection_id", ["inspectionId"]),
 
@@ -241,6 +264,9 @@ export default defineSchema({
     dueDate: v.optional(v.number()),
     status: v.string(),
     stopWorkIssued: v.boolean(),
+    closureVerifiedAt: v.optional(v.number()),
+    closureVerifiedByUserId: v.optional(v.id("users")),
+    reopenedCount: v.number(),
     createdByUserId: v.id("users"),
     createdAt: v.number(),
     updatedAt: v.number(),

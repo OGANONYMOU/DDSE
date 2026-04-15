@@ -1,14 +1,14 @@
 import { api, convex } from './convex';
-import { clearSessionToken, getSessionToken, storeSessionToken } from './session';
-import type { DashboardSummary, InspectionDetail, InspectionSummary, ModuleDefinition, PlatformUser, RegistrationFormOptions, SessionPayload } from '../types/platform';
-
-function requireSessionToken() {
-  const sessionToken = getSessionToken();
-  if (!sessionToken) {
-    throw new Error('No active secure session found.');
-  }
-  return sessionToken;
-}
+import { brokerFetch, brokerRpc } from './sessionBroker';
+import type {
+  DashboardSummary,
+  InspectionDetail,
+  InspectionSummary,
+  ModuleDefinition,
+  PlatformUser,
+  RegistrationFormOptions,
+  SessionInventoryEntry,
+} from '../types/platform';
 
 export async function bootstrapPlatform() {
   return convex.mutation(api.catalog.bootstrapReferenceData, {});
@@ -34,41 +34,73 @@ export async function registerPersonnel(payload: {
   password: string;
   confirmPassword: string;
 }) {
-  return convex.action(api.authNode.register, payload) as Promise<{ nextStep: string; challengeId: string; destinationMasked: string }>;
+  return brokerFetch<{
+    nextStep: string;
+    challengeId: string;
+    destinationMasked: string;
+    previewCode?: string;
+  }>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function verifyRegistration(challengeId: string, code: string) {
-  return convex.action(api.authNode.verifyRegistration, { challengeId, code }) as Promise<{ status: string; message: string }>;
+  return brokerFetch<{ status: string; message: string }>('/api/auth/verify-registration', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId, code }),
+  });
 }
 
 export async function resendChallenge(challengeId: string) {
-  return convex.action(api.authNode.resendChallenge, { challengeId }) as Promise<{ challengeId: string; destinationMasked: string }>;
+  return brokerFetch<{
+    challengeId: string;
+    destinationMasked: string;
+    previewCode?: string;
+  }>('/api/auth/resend-challenge', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId }),
+  });
 }
 
 export async function signIn(payload: { appointmentNumber: string; password: string; userAgent?: string }) {
-  return convex.action(api.authNode.signIn, payload) as Promise<{ requiresOtp?: boolean; challengeId?: string; destinationMasked?: string } | SessionPayload>;
+  return brokerFetch<{ requiresOtp?: boolean; challengeId?: string; destinationMasked?: string; previewCode?: string; expiresAt?: number; user?: PlatformUser }>(
+    '/api/auth/sign-in',
+    {
+      method: 'POST',
+      body: JSON.stringify({ ...payload, userAgent: navigator.userAgent }),
+    },
+  );
 }
 
 export async function verifySignIn(challengeId: string, code: string) {
-  const session = (await convex.action(api.authNode.verifySignIn, { challengeId, code, userAgent: navigator.userAgent })) as SessionPayload;
-  storeSessionToken(session.sessionToken, session.expiresAt);
-  return session;
+  return brokerFetch<{ expiresAt: number; user: PlatformUser }>('/api/auth/verify-sign-in', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId, code, userAgent: navigator.userAgent }),
+  });
 }
 
 export async function completeSignIn(payload: { appointmentNumber: string; password: string }) {
-  const result = await signIn({ ...payload, userAgent: navigator.userAgent });
-  if ('sessionToken' in result) {
-    storeSessionToken(result.sessionToken, result.expiresAt);
-  }
-  return result;
+  return signIn({ ...payload, userAgent: navigator.userAgent });
 }
 
 export async function requestPasswordReset(appointmentNumber: string) {
-  return convex.action(api.authNode.requestPasswordReset, { appointmentNumber }) as Promise<{ challengeId: string; destinationMasked: string }>;
+  return brokerFetch<{
+    challengeId: string | null;
+    destinationMasked: string;
+    message: string;
+    previewCode?: string;
+  }>('/api/auth/password-reset/request', {
+    method: 'POST',
+    body: JSON.stringify({ appointmentNumber }),
+  });
 }
 
 export async function verifyPasswordReset(challengeId: string, code: string) {
-  return convex.action(api.authNode.verifyPasswordReset, { challengeId, code }) as Promise<{ resetToken: string }>;
+  return brokerFetch<{ resetToken: string }>('/api/auth/password-reset/verify', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId, code }),
+  });
 }
 
 export async function resetPassword(payload: {
@@ -77,56 +109,76 @@ export async function resetPassword(payload: {
   password: string;
   confirmPassword: string;
 }) {
-  return convex.action(api.authNode.resetPassword, payload);
+  return brokerFetch('/api/auth/password-reset/complete', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function restoreSession() {
-  const sessionToken = getSessionToken();
-  if (!sessionToken) {
-    return null;
-  }
-
-  const restored = (await convex.query(api.auth.currentSession, { sessionToken })) as { user: PlatformUser; session: { expiresAt: number } } | null;
-  if (!restored) {
-    clearSessionToken();
-    return null;
-  }
-  return restored;
+  return brokerFetch<{ user: PlatformUser; session: { expiresAt: number; lastSeenAt: number; sessionLabel?: string } } | null>('/api/auth/session', {
+    method: 'GET',
+  });
 }
 
 export async function signOut() {
-  const sessionToken = getSessionToken();
-  if (!sessionToken) return;
-  await convex.mutation(api.auth.signOut, { sessionToken });
-  clearSessionToken();
+  await brokerFetch<{ ok: true }>('/api/auth/sign-out', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }
 
 export async function getPendingApprovals() {
-  return convex.query(api.auth.pendingApprovals, { sessionToken: requireSessionToken() });
+  return brokerRpc('getPendingApprovals');
+}
+
+export async function listActiveSessions() {
+  return brokerFetch<SessionInventoryEntry[]>('/api/auth/sessions', {
+    method: 'GET',
+  });
+}
+
+export async function revokeSession(targetSessionId: string) {
+  return brokerFetch<{ ok: true }>('/api/auth/sessions/revoke', {
+    method: 'POST',
+    body: JSON.stringify({ targetSessionId }),
+  });
+}
+
+export async function revokeOtherSessions() {
+  return brokerFetch<{ ok: true }>('/api/auth/sessions/revoke-others', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }
 
 export async function approveRegistration(registrationApprovalId: string, decision: 'approved' | 'rejected', notes?: string) {
-  return convex.mutation(api.auth.approveRegistration, {
-    sessionToken: requireSessionToken(),
+  return brokerRpc('approveRegistration', {
     registrationApprovalId,
     decision,
     notes,
   });
 }
 
-export async function getCommandCenterSummary() {
-  return convex.query(api.dashboard.commandCenter, { sessionToken: requireSessionToken() }) as Promise<DashboardSummary>;
+export async function getCommandCenterSummary(payload: Record<string, unknown> = {}) {
+  return brokerRpc<DashboardSummary>('getCommandCenterSummary', payload);
 }
 
 export async function getModules() {
-  return convex.query(api.catalog.listModules, { sessionToken: requireSessionToken() }) as Promise<ModuleDefinition[]>;
+  return brokerRpc<ModuleDefinition[]>('getModules');
+}
+
+export async function exportCommandReport(payload: Record<string, unknown> = {}) {
+  return brokerRpc<{
+    generatedAt: number;
+    generatedBy: { appointmentNumber: string; roleCode: string };
+    scope: Record<string, unknown>;
+    inspections: InspectionSummary[];
+  }>('exportCommandReport', payload);
 }
 
 export async function listInspections(moduleCode?: string) {
-  return convex.query(api.inspections.listInspections, {
-    sessionToken: requireSessionToken(),
-    moduleCode,
-  }) as Promise<InspectionSummary[]>;
+  return brokerRpc<InspectionSummary[]>('listInspections', { moduleCode });
 }
 
 export async function createInspection(payload: {
@@ -138,17 +190,13 @@ export async function createInspection(payload: {
   subjectName?: string;
   subjectReference?: string;
 }) {
-  return convex.mutation(api.inspections.createInspection, {
-    sessionToken: requireSessionToken(),
-    ...payload,
-  }) as Promise<string>;
+  return brokerRpc<string>('createInspection', payload);
 }
 
 export async function getInspectionDetail(inspectionId: string) {
-  return convex.query(api.inspections.getInspectionDetail, {
-    sessionToken: requireSessionToken(),
+  return brokerRpc<InspectionDetail>('getInspectionDetail', {
     inspectionId,
-  }) as Promise<InspectionDetail>;
+  });
 }
 
 export async function saveInspectionResponse(payload: {
@@ -161,15 +209,11 @@ export async function saveInspectionResponse(payload: {
   immediateRisk: boolean;
   remarks?: string;
 }) {
-  return convex.mutation(api.inspections.saveResponse, {
-    sessionToken: requireSessionToken(),
-    ...payload,
-  });
+  return brokerRpc('saveInspectionResponse', payload);
 }
 
 export async function transitionInspection(inspectionId: string, toStatus: string, comments?: string) {
-  return convex.mutation(api.inspections.transitionInspection, {
-    sessionToken: requireSessionToken(),
+  return brokerRpc('transitionInspection', {
     inspectionId,
     toStatus,
     comments,
@@ -177,8 +221,7 @@ export async function transitionInspection(inspectionId: string, toStatus: strin
 }
 
 export async function addCorrectiveAction(inspectionId: string, title: string, detail: string, stopWorkIssued = false) {
-  return convex.mutation(api.inspections.addCorrectiveAction, {
-    sessionToken: requireSessionToken(),
+  return brokerRpc('addCorrectiveAction', {
     inspectionId,
     title,
     detail,
@@ -193,10 +236,7 @@ export async function createFinding(payload: {
   detail: string;
   severity: string;
 }) {
-  return convex.mutation(api.inspections.createFinding, {
-    sessionToken: requireSessionToken(),
-    ...payload,
-  });
+  return brokerRpc('createFinding', payload);
 }
 
 export async function updateFinding(payload: {
@@ -206,15 +246,11 @@ export async function updateFinding(payload: {
   severity: string;
   status: string;
 }) {
-  return convex.mutation(api.inspections.updateFinding, {
-    sessionToken: requireSessionToken(),
-    ...payload,
-  });
+  return brokerRpc('updateFinding', payload);
 }
 
 export async function deleteFinding(findingId: string) {
-  return convex.mutation(api.inspections.deleteFinding, {
-    sessionToken: requireSessionToken(),
+  return brokerRpc('deleteFinding', {
     findingId,
   });
 }
@@ -225,24 +261,24 @@ export async function addReviewComment(payload: {
   parentCommentId?: string;
   body: string;
 }) {
-  return convex.mutation(api.inspections.addReviewComment, {
-    sessionToken: requireSessionToken(),
-    ...payload,
-  });
+  return brokerRpc('addReviewComment', payload);
 }
 
 export async function resolveReviewComment(commentId: string) {
-  return convex.mutation(api.inspections.resolveReviewComment, {
-    sessionToken: requireSessionToken(),
+  return brokerRpc('resolveReviewComment', {
     commentId,
   });
 }
 
 export async function uploadEvidence(inspectionId: string, file: File, sectionId?: string, itemId?: string) {
-  const uploadUrl = (await convex.mutation(api.inspections.generateEvidenceUploadUrl, {
-    sessionToken: requireSessionToken(),
+  const hashBuffer = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  const contentHash = Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+
+  const uploadUrl = await brokerRpc<string>('generateEvidenceUploadUrl', {
     inspectionId,
-  })) as string;
+  });
 
   const uploadResponse = await fetch(uploadUrl, {
     method: 'POST',
@@ -254,8 +290,7 @@ export async function uploadEvidence(inspectionId: string, file: File, sectionId
   }
 
   const { storageId } = (await uploadResponse.json()) as { storageId: string };
-  return convex.mutation(api.inspections.attachEvidence, {
-    sessionToken: requireSessionToken(),
+  return brokerRpc('attachEvidence', {
     inspectionId,
     sectionId,
     itemId,
@@ -264,12 +299,20 @@ export async function uploadEvidence(inspectionId: string, file: File, sectionId
     contentType: file.type,
     sizeBytes: file.size,
     classification: 'official',
+    contentHash,
+    provenance: {
+      originalLastModified: file.lastModified,
+      source: 'browser_upload',
+    },
   });
 }
 
-export async function getEvidenceDownloadUrl(evidenceId: string) {
-  return convex.mutation(api.inspections.getEvidenceDownloadUrl, {
-    sessionToken: requireSessionToken(),
-    evidenceId,
-  }) as Promise<{ fileName: string; contentType: string; url: string; expiresInSeconds: number }>;
+export async function getEvidenceDownloadUrl(evidenceId: string, reason?: string) {
+  return brokerRpc<{ fileName: string; contentType: string; classification: string; watermarkLabel?: string; url: string; expiresInSeconds: number }>(
+    'getEvidenceDownloadUrl',
+    {
+      evidenceId,
+      reason,
+    },
+  );
 }

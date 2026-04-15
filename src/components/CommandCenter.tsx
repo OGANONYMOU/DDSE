@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FileCheck2, Layers3, LogOut, MessageSquareCode, ShieldCheck, Siren } from 'lucide-react';
 import { toast } from 'sonner';
-import { addCorrectiveAction, addReviewComment, approveRegistration, createFinding, createInspection, getCommandCenterSummary, getEvidenceDownloadUrl, getInspectionDetail, getModules, getPendingApprovals, listInspections, saveInspectionResponse, transitionInspection, uploadEvidence } from '../lib/api';
-import type { DashboardSummary, InspectionDetail, InspectionSummary, ModuleDefinition, PlatformUser } from '../types/platform';
+import { addCorrectiveAction, addReviewComment, approveRegistration, createFinding, createInspection, exportCommandReport, getCommandCenterSummary, getEvidenceDownloadUrl, getInspectionDetail, getModules, getPendingApprovals, listActiveSessions, listInspections, revokeOtherSessions, revokeSession, saveInspectionResponse, transitionInspection, uploadEvidence } from '../lib/api';
+import type { DashboardSummary, InspectionDetail, InspectionSummary, ModuleDefinition, PlatformUser, SessionInventoryEntry } from '../types/platform';
 
 interface CommandCenterProps {
   user: PlatformUser;
@@ -17,20 +17,23 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
   const [detail, setDetail] = useState<InspectionDetail | null>(null);
   const [activeModule, setActiveModule] = useState('hazard_safety');
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<SessionInventoryEntry[]>([]);
   const [newInspectionTitle, setNewInspectionTitle] = useState('');
   const [loading, setLoading] = useState(true);
 
   async function loadDashboard() {
-    const [dashboardSummary, moduleList, inspectionList, approvals] = await Promise.all([
+    const [dashboardSummary, moduleList, inspectionList, approvals, sessionInventory] = await Promise.all([
       getCommandCenterSummary(),
       getModules(),
       listInspections(activeModule),
       getPendingApprovals().catch(() => []),
+      listActiveSessions().catch(() => []),
     ]);
     setSummary(dashboardSummary);
     setModules(moduleList);
     setInspections(inspectionList);
     setPendingApprovals(approvals as any[]);
+    setSessions(sessionInventory as SessionInventoryEntry[]);
   }
 
   useEffect(() => {
@@ -104,6 +107,27 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
               ))}
             </section>
 
+            <div className="flex justify-end">
+              <button
+                className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm font-semibold text-sky-100"
+                onClick={() =>
+                  exportCommandReport({ moduleCode: activeModule }).then((report) => {
+                    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `ddse-command-report-${Date.now()}.json`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                    toast.success('Scoped command export generated.');
+                  }).catch((error: Error) => toast.error(error.message))
+                }
+                type="button"
+              >
+                Export Scoped Report
+              </button>
+            </div>
+
             <section className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
               <div className="rounded-3xl border border-sky-500/10 bg-slate-950/70 p-6">
                 <div className="flex items-center gap-3">
@@ -142,9 +166,30 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
                       <div key={approval.approvalId} className="rounded-2xl border border-amber-500/15 bg-amber-500/10 p-4">
                         <p className="text-sm font-semibold text-white">{approval.fullName}</p>
                         <p className="mt-1 text-xs text-amber-100/80">{approval.appointmentNumber} · {approval.requestedRoleCode.replaceAll('_', ' ')}</p>
+                        <p className="mt-1 text-xs text-amber-100/70">{approval.justification || 'No justification submitted.'}</p>
                         <div className="mt-3 flex gap-2">
-                          <button className="rounded-xl bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100" onClick={() => approveRegistration(approval.approvalId, 'approved').then(loadDashboard)} type="button">Approve</button>
-                          <button className="rounded-xl bg-rose-500/20 px-3 py-2 text-xs font-semibold text-rose-100" onClick={() => approveRegistration(approval.approvalId, 'rejected').then(loadDashboard)} type="button">Reject</button>
+                          <button
+                            className="rounded-xl bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100"
+                            onClick={() => {
+                              const notes = window.prompt('Approval rationale', approval.justification || '');
+                              if (!notes) return;
+                              approveRegistration(approval.approvalId, 'approved', notes).then(loadDashboard);
+                            }}
+                            type="button"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="rounded-xl bg-rose-500/20 px-3 py-2 text-xs font-semibold text-rose-100"
+                            onClick={() => {
+                              const notes = window.prompt('Rejection rationale', '');
+                              if (!notes) return;
+                              approveRegistration(approval.approvalId, 'rejected', notes).then(loadDashboard);
+                            }}
+                            type="button"
+                          >
+                            Reject
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -178,6 +223,60 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
                     <div key={activity.id} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
                       <p className="text-sm text-white">{activity.action}</p>
                       <p className="mt-1 text-xs text-slate-400">{activity.entityType} · {activity.moduleCode?.replaceAll('_', ' ') ?? 'platform'} · {new Date(activity.createdAt).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+              <div className="rounded-3xl border border-sky-500/10 bg-slate-950/70 p-6">
+                <h2 className="text-lg font-bold text-white">Comparative Command View</h2>
+                <div className="mt-5 space-y-4">
+                  {[
+                    { label: 'Directorates', rows: summary.comparisons.directorates },
+                    { label: 'Formations', rows: summary.comparisons.formations },
+                    { label: 'Units', rows: summary.comparisons.units },
+                  ].map((group) => (
+                    <div key={group.label}>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{group.label}</p>
+                      <div className="mt-2 space-y-2">
+                        {group.rows.slice(0, 3).map((row) => (
+                          <div key={row.key} className="rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-sm text-slate-200">
+                            <div className="flex items-center justify-between gap-3">
+                              <span>{row.key}</span>
+                              <span className="text-xs text-slate-400">{row.inspections} inspections · {row.averageScore}%</span>
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">Overdue {row.overdue} · High risk {row.highRisk}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-sky-500/10 bg-slate-950/70 p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-bold text-white">Session Inventory</h2>
+                  <button className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100" onClick={() => revokeOtherSessions().then(loadDashboard)} type="button">
+                    Revoke Other Sessions
+                  </button>
+                </div>
+                <div className="mt-5 space-y-3">
+                  {sessions.map((session) => (
+                    <div key={session.sessionId} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{session.sessionLabel || 'Operational endpoint'}{session.isCurrent ? ' · Current' : ''}</p>
+                          <p className="mt-1 text-xs text-slate-400">{session.ipAddress || 'IP not captured'} · last seen {new Date(session.lastSeenAt).toLocaleString()}</p>
+                        </div>
+                        {!session.isCurrent && session.status === 'active' && (
+                          <button className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-100" onClick={() => revokeSession(session.sessionId).then(loadDashboard)} type="button">
+                            Revoke
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -240,10 +339,22 @@ function InspectionDetailPanel({ detail, onChange }: { detail: InspectionDetail;
         <div>
           <h2 className="text-xl font-black text-white">{detail.inspection.title}</h2>
           <p className="mt-1 text-sm text-slate-400">{detail.inspection.status.replaceAll('_', ' ')} · {detail.inspection.scoreOverall}% · {detail.inspection.complianceBand}</p>
+          <p className="mt-1 text-xs uppercase tracking-[0.25em] text-amber-200/70">{detail.inspection.moduleCode.replaceAll('_', ' ')} · {detail.inspection.classification.replaceAll('_', ' ')}</p>
         </div>
         <div className="flex gap-2">
-          {['submitted', 'in_review', 'approved', 'requires_correction'].map((status) => (
-            <button key={status} className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200" onClick={() => transitionInspection(detail.inspection._id, status).then(onChange)} type="button">
+          {['submitted', 'in_review', 'approved', 'requires_correction', 'closed'].map((status) => (
+            <button
+              key={status}
+              className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200"
+              onClick={() => {
+                const comments = ['approved', 'requires_correction', 'closed'].includes(status)
+                  ? window.prompt('Decision rationale', '')
+                  : undefined;
+                if (['approved', 'requires_correction', 'closed'].includes(status) && !comments) return;
+                transitionInspection(detail.inspection._id, status, comments ?? undefined).then(onChange);
+              }}
+              type="button"
+            >
               {status.replaceAll('_', ' ')}
             </button>
           ))}
@@ -278,18 +389,26 @@ function InspectionDetailPanel({ detail, onChange }: { detail: InspectionDetail;
                   {item.evidence.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {item.evidence.map((evidence) => (
-                        <button
-                          key={evidence._id}
-                          className="rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-200"
-                          onClick={() => {
-                            getEvidenceDownloadUrl(evidence._id)
-                              .then((result) => window.open(result.url, '_blank', 'noopener,noreferrer'))
-                              .catch((error: Error) => toast.error(error.message));
-                          }}
-                          type="button"
-                        >
-                          {evidence.fileName}
-                        </button>
+                        <div key={evidence._id} className="flex flex-wrap gap-2">
+                          <button
+                            className="rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-200"
+                            onClick={() => {
+                              const reason = evidence.classification !== 'official'
+                                ? window.prompt('Restricted evidence access reason', '')
+                                : undefined;
+                              if (evidence.classification !== 'official' && !reason) return;
+                              getEvidenceDownloadUrl(evidence._id, reason ?? undefined)
+                                .then((result) => window.open(result.url, '_blank', 'noopener,noreferrer'))
+                                .catch((error: Error) => toast.error(error.message));
+                            }}
+                            type="button"
+                          >
+                            {evidence.fileName}
+                          </button>
+                          <span className="rounded-xl border border-slate-700 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                            {evidence.classification.replaceAll('_', ' ')}
+                          </span>
+                        </div>
                       ))}
                     </div>
                   )}

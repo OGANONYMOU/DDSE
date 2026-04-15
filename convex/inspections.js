@@ -1,7 +1,37 @@
 import { mutation, query } from "./_generated/server";
 import { v } from 'convex/values';
-import { roleCanAccessModule, roleCanCreateInspection, roleCanDownloadEvidence } from './lib/authz';
+import {
+  canAccessEvidence,
+  canAccessInspection,
+  canCloseInspection,
+  canCreateInspectionForOrg,
+  canReviewInspection,
+  roleCanAccessModule,
+} from './lib/authz';
 import { canTransitionInspection, computeInspectionScores } from './lib/workflow';
+
+const ALLOWED_EVIDENCE_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/plain',
+]);
+
+function sanitizeFileName(fileName) {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
+}
+
+function deriveEvidenceClassification(moduleCode, requestedClassification) {
+  if (moduleCode === 'armoury') return 'restricted_armoury';
+  if (moduleCode === 'magazine') return 'restricted_magazine';
+  if (moduleCode === 'general_security' || moduleCode === 'jtf_readiness') return 'restricted_security';
+  return requestedClassification || 'official';
+}
+
+function isSensitiveModule(moduleCode) {
+  return ['armoury', 'magazine', 'general_security', 'jtf_readiness'].includes(moduleCode);
+}
 
 async function getAuth(ctx, sessionToken) {
   const session = await ctx.db.query('authSessions').withIndex('by_session_token', (q) => q.eq('sessionToken', sessionToken)).unique();
@@ -48,6 +78,15 @@ async function recalculateInspection(ctx, inspectionId) {
   return scores;
 }
 
+function ensureEditRights(user, inspection) {
+  const sameOwner = inspection.createdByUserId === user._id || inspection.assignedToUserId === user._id;
+  if (sameOwner) {
+    return true;
+  }
+
+  return ['super_admin', 'ddse_admin', 'evaluator', 'directorate_officer', 'project_officer'].includes(user.activeRoleCode);
+}
+
 export const createInspection = mutation({
   args: {
     sessionToken: v.string(),
@@ -62,7 +101,7 @@ export const createInspection = mutation({
   },
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
-    if (!roleCanCreateInspection(user.activeRoleCode, args.moduleCode)) {
+    if (!roleCanAccessModule(user.activeRoleCode, args.moduleCode) || !canCreateInspectionForOrg(user, args)) {
       throw new Error('You do not have permission to create this inspection.');
     }
 
@@ -74,7 +113,7 @@ export const createInspection = mutation({
     const inspectionId = await ctx.db.insert('inspections', {
       templateId: template._id,
       moduleCode: template.moduleCode,
-      title: args.title,
+      title: args.title.trim(),
       classification: template.classification,
       status: 'draft',
       createdByUserId: user._id,
@@ -92,6 +131,9 @@ export const createInspection = mutation({
       submittedAt: undefined,
       reviewedAt: undefined,
       approvedAt: undefined,
+      reopenedAt: undefined,
+      lastDecisionAt: undefined,
+      lastDecisionByUserId: undefined,
       updatedAt: Date.now(),
       createdAt: Date.now(),
     });
@@ -114,6 +156,11 @@ export const listInspections = query({
   args: {
     sessionToken: v.string(),
     moduleCode: v.optional(v.string()),
+    status: v.optional(v.string()),
+    riskLevel: v.optional(v.string()),
+    directorateCode: v.optional(v.string()),
+    formationCode: v.optional(v.string()),
+    unitCode: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
@@ -121,7 +168,12 @@ export const listInspections = query({
 
     return inspections
       .filter((inspection) => !args.moduleCode || inspection.moduleCode === args.moduleCode)
-      .filter((inspection) => roleCanAccessModule(user.activeRoleCode, inspection.moduleCode))
+      .filter((inspection) => !args.status || inspection.status === args.status)
+      .filter((inspection) => !args.riskLevel || inspection.riskLevel === args.riskLevel)
+      .filter((inspection) => !args.directorateCode || inspection.directorateCode === args.directorateCode)
+      .filter((inspection) => !args.formationCode || inspection.formationCode === args.formationCode)
+      .filter((inspection) => !args.unitCode || inspection.unitCode === args.unitCode)
+      .filter((inspection) => canAccessInspection(user, inspection))
       .sort((left, right) => right.updatedAt - left.updatedAt);
   },
 });
@@ -134,7 +186,7 @@ export const getInspectionDetail = query({
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const inspection = await ctx.db.get(args.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canAccessInspection(user, inspection)) {
       throw new Error('Inspection not found or access denied.');
     }
 
@@ -142,11 +194,13 @@ export const getInspectionDetail = query({
     const items = await ctx.db.query('inspectionItems').withIndex('by_template_id', (q) => q.eq('templateId', inspection.templateId)).collect();
     const responses = await ctx.db.query('responses').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect();
     const findings = await ctx.db.query('findings').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect();
-    const evidence = await ctx.db.query('evidence').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect();
+    const evidence = (await ctx.db.query('evidence').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect())
+      .filter((entry) => canAccessEvidence(user, inspection, entry));
     const correctiveActions = await ctx.db.query('correctiveActions').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect();
     const approvals = await ctx.db.query('approvals').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect();
     const reviewComments = await ctx.db.query('reviewComments').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect();
-    const auditLogs = (await ctx.db.query('auditLogs').withIndex('by_entity', (q) => q.eq('entityType', 'inspection').eq('entityId', String(args.inspectionId))).collect()).sort((left, right) => right.createdAt - left.createdAt);
+    const auditLogs = (await ctx.db.query('auditLogs').withIndex('by_entity', (q) => q.eq('entityType', 'inspection').eq('entityId', String(args.inspectionId))).collect())
+      .sort((left, right) => right.createdAt - left.createdAt);
 
     return {
       inspection,
@@ -187,11 +241,16 @@ export const saveResponse = mutation({
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const inspection = await ctx.db.get(args.inspectionId);
-    if (!inspection || !['draft', 'requires_correction'].includes(inspection.status)) {
+    if (!inspection || !canAccessInspection(user, inspection) || !ensureEditRights(user, inspection)) {
+      throw new Error('Inspection is not editable.');
+    }
+    if (!['draft', 'requires_correction'].includes(inspection.status)) {
       throw new Error('Inspection is not editable.');
     }
 
-    const existing = (await ctx.db.query('responses').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect()).find((response) => response.itemId === args.itemId);
+    const existing = (await ctx.db.query('responses').withIndex('by_inspection_id', (q) => q.eq('inspectionId', args.inspectionId)).collect())
+      .find((response) => response.itemId === args.itemId);
+
     if (existing) {
       await ctx.db.patch(existing._id, {
         responseValue: args.responseValue,
@@ -241,17 +300,40 @@ export const transitionInspection = mutation({
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const inspection = await ctx.db.get(args.inspectionId);
-    if (!inspection || !canTransitionInspection(user.activeRoleCode, inspection.status, args.toStatus)) {
+    if (!inspection || !canAccessInspection(user, inspection) || !canTransitionInspection(user.activeRoleCode, inspection.status, args.toStatus)) {
       throw new Error('Inspection status transition is not allowed.');
+    }
+
+    if (['approved', 'rejected', 'requires_correction', 'closed'].includes(args.toStatus) && !args.comments?.trim()) {
+      throw new Error('Decision rationale is required for this workflow action.');
+    }
+
+    if (['approved', 'rejected', 'requires_correction'].includes(args.toStatus)) {
+      if (!canReviewInspection(user, inspection)) {
+        throw new Error('Review authority is required for this decision.');
+      }
+      if (inspection.createdByUserId === user._id && !['super_admin', 'ddse_admin'].includes(user.activeRoleCode)) {
+        throw new Error('Independent review is required before this decision can be recorded.');
+      }
+    }
+
+    if (args.toStatus === 'closed' && !canCloseInspection(user, inspection)) {
+      throw new Error('Closure authority is required for this decision.');
+    }
+    if (args.toStatus === 'closed' && isSensitiveModule(inspection.moduleCode) && inspection.lastDecisionByUserId === user._id) {
+      throw new Error('Sensitive module closure must be verified by a different authorized reviewer.');
     }
 
     const patch = {
       status: args.toStatus,
       updatedAt: Date.now(),
+      lastDecisionAt: Date.now(),
+      lastDecisionByUserId: user._id,
     };
     if (args.toStatus === 'submitted') patch.submittedAt = Date.now();
     if (args.toStatus === 'in_review') patch.reviewedAt = Date.now();
     if (args.toStatus === 'approved') patch.approvedAt = Date.now();
+    if (args.toStatus === 'requires_correction') patch.reopenedAt = Date.now();
     await ctx.db.patch(args.inspectionId, patch);
 
     await ctx.db.insert('approvals', {
@@ -270,6 +352,7 @@ export const transitionInspection = mutation({
       entityId: String(args.inspectionId),
       moduleCode: inspection.moduleCode,
       newValue: { status: args.toStatus },
+      justification: args.comments,
     });
 
     return { ok: true };
@@ -288,7 +371,7 @@ export const createFinding = mutation({
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const inspection = await ctx.db.get(args.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canAccessInspection(user, inspection)) {
       throw new Error('Inspection not found or access denied.');
     }
 
@@ -331,7 +414,7 @@ export const updateFinding = mutation({
     const finding = await ctx.db.get(args.findingId);
     if (!finding) throw new Error('Finding not found.');
     const inspection = await ctx.db.get(finding.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canAccessInspection(user, inspection)) {
       throw new Error('Access denied.');
     }
 
@@ -366,7 +449,7 @@ export const deleteFinding = mutation({
     const finding = await ctx.db.get(args.findingId);
     if (!finding) throw new Error('Finding not found.');
     const inspection = await ctx.db.get(finding.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canAccessInspection(user, inspection)) {
       throw new Error('Access denied.');
     }
 
@@ -395,7 +478,7 @@ export const addReviewComment = mutation({
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const inspection = await ctx.db.get(args.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canAccessInspection(user, inspection)) {
       throw new Error('Inspection not found or access denied.');
     }
 
@@ -405,7 +488,7 @@ export const addReviewComment = mutation({
       parentCommentId: args.parentCommentId,
       actorUserId: user._id,
       actorRoleCode: user.activeRoleCode,
-      body: args.body,
+      body: args.body.trim(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       resolvedAt: undefined,
@@ -434,7 +517,7 @@ export const resolveReviewComment = mutation({
     const comment = await ctx.db.get(args.commentId);
     if (!comment) throw new Error('Comment not found.');
     const inspection = await ctx.db.get(comment.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canReviewInspection(user, inspection)) {
       throw new Error('Access denied.');
     }
 
@@ -458,7 +541,7 @@ export const addCorrectiveAction = mutation({
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const inspection = await ctx.db.get(args.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canReviewInspection(user, inspection)) {
       throw new Error('Inspection not found or access denied.');
     }
 
@@ -471,6 +554,9 @@ export const addCorrectiveAction = mutation({
       dueDate: args.dueDate,
       status: 'open',
       stopWorkIssued: args.stopWorkIssued,
+      closureVerifiedAt: undefined,
+      closureVerifiedByUserId: undefined,
+      reopenedCount: 0,
       createdByUserId: user._id,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -497,8 +583,11 @@ export const generateEvidenceUploadUrl = mutation({
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const inspection = await ctx.db.get(args.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canAccessInspection(user, inspection) || !ensureEditRights(user, inspection)) {
       throw new Error('Inspection not found or access denied.');
+    }
+    if (!['draft', 'requires_correction'].includes(inspection.status)) {
+      throw new Error('Evidence can only be uploaded while the inspection is editable.');
     }
     return ctx.storage.generateUploadUrl();
   },
@@ -515,36 +604,39 @@ export const attachEvidence = mutation({
     contentType: v.string(),
     sizeBytes: v.number(),
     classification: v.string(),
+    contentHash: v.optional(v.string()),
+    provenance: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const inspection = await ctx.db.get(args.inspectionId);
-    if (!inspection || !roleCanAccessModule(user.activeRoleCode, inspection.moduleCode)) {
+    if (!inspection || !canAccessInspection(user, inspection) || !ensureEditRights(user, inspection)) {
       throw new Error('Inspection not found or access denied.');
     }
     if (args.sizeBytes > 15 * 1024 * 1024) {
       throw new Error('Evidence exceeds the maximum allowed file size.');
     }
+    if (!ALLOWED_EVIDENCE_TYPES.has(args.contentType)) {
+      throw new Error('Evidence content type is not authorized.');
+    }
 
-    const defaultClassification =
-      inspection.moduleCode === 'armoury'
-        ? 'restricted_armoury'
-        : inspection.moduleCode === 'magazine'
-          ? 'restricted_magazine'
-          : inspection.moduleCode === 'general_security' || inspection.moduleCode === 'jtf_readiness'
-            ? 'restricted_security'
-            : args.classification;
-
+    const classification = deriveEvidenceClassification(inspection.moduleCode, args.classification);
     const evidenceId = await ctx.db.insert('evidence', {
       inspectionId: args.inspectionId,
       sectionId: args.sectionId,
       itemId: args.itemId,
       actorUserId: user._id,
       storageId: args.storageId,
-      fileName: args.fileName,
+      fileName: sanitizeFileName(args.fileName),
       contentType: args.contentType,
       sizeBytes: args.sizeBytes,
-      classification: defaultClassification,
+      classification,
+      uploadedByRoleCode: user.activeRoleCode,
+      contentHash: args.contentHash,
+      provenance: args.provenance,
+      watermarkLabel: `${classification.toUpperCase()} // ${inspection.unitCode} // DDSE`,
+      lastAccessedAt: undefined,
+      accessCount: 0,
       createdAt: Date.now(),
     });
 
@@ -565,14 +657,18 @@ export const getEvidenceDownloadUrl = mutation({
   args: {
     sessionToken: v.string(),
     evidenceId: v.id('evidence'),
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user } = await getAuth(ctx, args.sessionToken);
     const evidence = await ctx.db.get(args.evidenceId);
     if (!evidence) throw new Error('Evidence not found.');
     const inspection = await ctx.db.get(evidence.inspectionId);
-    if (!inspection || !roleCanDownloadEvidence(user.activeRoleCode, inspection.moduleCode, evidence.classification)) {
+    if (!inspection || !canAccessEvidence(user, inspection, evidence)) {
       throw new Error('You are not authorized to access this evidence.');
+    }
+    if (inspection.classification !== 'official' && !args.reason?.trim()) {
+      throw new Error('Access reason is required for restricted evidence.');
     }
 
     const url = await ctx.storage.getUrl(evidence.storageId);
@@ -580,6 +676,10 @@ export const getEvidenceDownloadUrl = mutation({
       throw new Error('Evidence file is unavailable.');
     }
 
+    await ctx.db.patch(args.evidenceId, {
+      lastAccessedAt: Date.now(),
+      accessCount: (evidence.accessCount ?? 0) + 1,
+    });
     await recordAudit(ctx, {
       actorUserId: user._id,
       actorRoleCode: user.activeRoleCode,
@@ -587,11 +687,15 @@ export const getEvidenceDownloadUrl = mutation({
       entityType: 'evidence',
       entityId: String(args.evidenceId),
       moduleCode: inspection.moduleCode,
+      justification: args.reason,
+      newValue: { classification: evidence.classification, contentHash: evidence.contentHash },
     });
 
     return {
       fileName: evidence.fileName,
       contentType: evidence.contentType,
+      classification: evidence.classification,
+      watermarkLabel: evidence.watermarkLabel,
       url,
       expiresInSeconds: 300,
     };
