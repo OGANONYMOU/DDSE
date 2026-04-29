@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
-import { Plus, Search, CheckCircle, AlertTriangle, Wrench, Shield,
-  Book, Key, Users, Flame, FileText, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { Plus, Search, CheckCircle, Shield,
+  Book, Key, Users, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+// All imports used: Plus, Search, CheckCircle, Shield, Book, Key, Users, ChevronDown, ChevronRight
 import type { UserRole } from '../../App';
 
 const C = { red:'#ff3131', dark:'#1800ad', light:'#38b6ff' };
@@ -95,7 +96,7 @@ const STORAGE_OPTS: Weapon['storage'][] = ['Racked & Chained','Racked','Chained'
 
 type Tab = 'inventory'|'checklist'|'issuebook'|'guardlog';
 
-export default function ArmouryModule({ userRole }: { userRole: UserRole|null }) {
+export default function ArmouryModule() {
   const [tab,setTab]       = useState<Tab>('inventory');
   const [weapons,setWpns]  = useState(WEAPONS);
   const [search,setSearch] = useState('');
@@ -281,7 +282,7 @@ export default function ArmouryModule({ userRole }: { userRole: UserRole|null })
                   </tr>
                 </thead>
                 <tbody ref={listRef}>
-                  {filtered.map((w,i)=>(
+                  {filtered.map((w)=>(
                     <tr key={w.id} style={{borderBottom:`1px solid ${C.dark}25`}}
                       onMouseEnter={e=>(e.currentTarget.style.background=`${C.dark}15`)}
                       onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>

@@ -1,13 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
-import { Plus, Search, Filter, Calendar, CheckCircle, FileText,
-  ClipboardCheck, ChevronDown, ChevronRight, X, AlertCircle, Target, Layers } from 'lucide-react';
+import { Plus, Search, Calendar, CheckCircle, FileText,
+  ChevronRight, X, Target, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import type { UserRole } from '../../App';
 
 const C = { red:'#ff3131', dark:'#1800ad', light:'#38b6ff' };
 
@@ -229,7 +228,7 @@ const PDF_CHECKLISTS: Record<string, {section:string; items:string[]}[]> = {
   ],
 };
 
-export default function InspectionsModule({userRole}:{userRole:UserRole|null}) {
+export default function InspectionsModule() {
   const [inspections,setInspections] = useState<Inspection[]>(MOCK);
   const [search,setSearch]   = useState('');
   const [filter,setFilter]   = useState('all');

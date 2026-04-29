@@ -1,19 +1,21 @@
 export interface PlatformUser {
   id: string;
   fullName: string;
-  appointmentNumber: string;
+  serviceNumber: string;
   roleCode: string;
   directorateCode: string;
-  formationCode: string;
-  unitCode: string;
   status: string;
   mfaRequired: boolean;
+  mfaEnrolled?: boolean;
+  mustChangePassword?: boolean;
+  isPlatformOwner?: boolean;
 }
 
 export interface SessionPayload {
   sessionToken: string;
   expiresAt: number;
   user: PlatformUser;
+  requiresBootstrapPasswordChange?: boolean;
 }
 
 export interface ChallengePayload {
@@ -24,8 +26,6 @@ export interface ChallengePayload {
 export interface RegistrationFormOptions {
   ranks: Array<{ code: string; label: string; order: number }>;
   directorates: Array<{ _id: string; code: string; name: string }>;
-  formations: Array<{ _id: string; code: string; name: string }>;
-  units: Array<{ _id: string; code: string; name: string; formationCode: string }>;
   roles: Array<{ code: string; label: string; privileged: boolean }>;
 }
 

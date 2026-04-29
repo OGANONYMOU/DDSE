@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { gsap } from 'gsap';
 import { Shield, Lock, Server, Wifi, Database, Eye, Cpu } from 'lucide-react';
 
@@ -37,7 +37,20 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
   const ring1Ref     = useRef<HTMLDivElement>(null);
   const ring2Ref     = useRef<HTMLDivElement>(null);
   const ring3Ref     = useRef<HTMLDivElement>(null);
-  const barRef       = useRef<HTMLDivElement>(null);
+  const dataStreams = useMemo(() => Array.from({length:8}).map((_,i) => ({
+    left: `${8+i*11.5}%`,
+    height: `${50+Math.random()*60}px`,
+    background: `linear-gradient(180deg,transparent,${i%2===0?C.light:C.dark}dd,transparent)`,
+  })), []);
+
+  const particles = useMemo(() => Array.from({length:26}).map((_,i) => ({
+    width: `${1.5+Math.random()*3}px`,
+    height: `${1.5+Math.random()*3}px`,
+    top: `${Math.random()*100}%`,
+    left: `${Math.random()*100}%`,
+    background: i%4===0?C.red:i%4===1?C.light:i%4===2?C.light:C.dark,
+    boxShadow: `0 0 8px ${i%4===0?C.red:C.light}`,
+  })), []);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -117,19 +130,19 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       </div>
 
       {/* Data streams */}
-      {Array.from({length:8}).map((_,i)=>(
+      {dataStreams.map((stream, i)=>(
         <div key={i} className="ds absolute top-0 w-px pointer-events-none"
-          style={{ left:`${8+i*11.5}%`, height:`${50+Math.random()*60}px`,
-            background:`linear-gradient(180deg,transparent,${i%2===0?C.light:C.dark}dd,transparent)`, opacity:0.6 }}/>
+          style={{ left: stream.left, height: stream.height,
+            background: stream.background, opacity:0.6 }}/>
       ))}
 
       {/* Floating particles */}
-      {Array.from({length:26}).map((_,i)=>(
+      {particles.map((particle, i)=>(
         <div key={i} className="lp absolute rounded-full pointer-events-none"
-          style={{ width:`${1.5+Math.random()*3}px`, height:`${1.5+Math.random()*3}px`,
-            top:`${Math.random()*100}%`, left:`${Math.random()*100}%`, opacity:0.4,
-            background: i%4===0?C.red:i%4===1?C.light:i%4===2?C.light:C.dark,
-            boxShadow:`0 0 8px ${i%4===0?C.red:C.light}` }}/>
+          style={{ width: particle.width, height: particle.height,
+            top: particle.top, left: particle.left, opacity:0.4,
+            background: particle.background,
+            boxShadow: particle.boxShadow }}/>
       ))}
 
       {/* Corner brackets */}

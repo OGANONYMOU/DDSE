@@ -1,4 +1,4 @@
 declare module '../../convex/_generated/api' {
-  export const api: any;
-  export const internal: any;
+  export const api: unknown;
+  export const internal: unknown;
 }

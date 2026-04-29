@@ -8,7 +8,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import type { UserRole } from '../../App';
 
 const C = { red: '#ff3131', dark: '#1800ad', light: '#38b6ff' };
 
@@ -54,7 +53,7 @@ const TYPES:CtType[]=['resource','technical','regulatory','personnel','budget','
 const IMPACTS:Impact[]=['low','medium','high','critical'];
 const STATUSES:CtStatus[]=['open','in_review','mitigated','resolved','escalated'];
 
-export default function ConstraintsModule({ userRole }: { userRole: UserRole|null }) {
+export default function ConstraintsModule() {
   const [items,setItems]   = useState<Constraint[]>(INIT);
   const [search,setSearch] = useState('');
   const [statFilt,setStFl] = useState('all');

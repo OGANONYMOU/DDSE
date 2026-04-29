@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { Download, FileBarChart, TrendingUp, Activity, CheckCircle, FileText, Clock, BarChart2 } from 'lucide-react';
+import { Download, TrendingUp, Activity, CheckCircle, FileText, Clock } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
-import type { UserRole } from '../../App';
 
 const C = { red: '#ff3131', dark: '#1800ad', light: '#38b6ff' };
 
@@ -22,7 +21,7 @@ const REPORTS = [
   {id:'RPT-2026-ARM',title:'Armoury Serviceability',type:'Armoury',date:'2026-01-20',status:'review'},
 ];
 
-export default function ReportsModule({ }: { userRole: UserRole|null }) {
+export default function ReportsModule() {
   const [period, setPeriod] = useState('q1');
   return (
     <div className="space-y-6 max-w-6xl mx-auto">

@@ -7,28 +7,23 @@ import { requiresApproval } from './lib/authz';
 import { randomCode, randomToken, sha256 } from './lib/security';
 
 const PASSWORD_RULE = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
-const APPOINTMENT_RULE = /^[A-Z0-9/-]{5,24}$/i;
+const APPOINTMENT_RULE = /^[A-Z0-9\/\-]{5,24}$/i;
 
 export const register = action({
   args: {
     fullName: v.string(),
-    appointmentNumber: v.string(),
+    serviceNumber: v.string(),
     rankCode: v.string(),
     requestedRoleCode: v.string(),
     directorateCode: v.string(),
-    formationCode: v.string(),
-    unitCode: v.string(),
     phoneNumber: v.string(),
     email: v.optional(v.string()),
-    branch: v.optional(v.string()),
-    identityNumber: v.optional(v.string()),
-    justification: v.optional(v.string()),
     password: v.string(),
     confirmPassword: v.string(),
   },
   handler: async (ctx, args) => {
-    if (!APPOINTMENT_RULE.test(args.appointmentNumber)) {
-      throw new Error('Appointment or service number format is invalid.');
+    if (!APPOINTMENT_RULE.test(args.serviceNumber)) {
+      throw new Error('Service number format is invalid.');
     }
     if (!PASSWORD_RULE.test(args.password)) {
       throw new Error('Password must be 12+ characters and include upper, lower, number, and symbol.');
@@ -37,17 +32,17 @@ export const register = action({
       throw new Error('Password confirmation does not match.');
     }
 
-    const appointmentNumber = args.appointmentNumber.toUpperCase();
-    const existingUser = await ctx.runQuery('auth:getUserByAppointmentNumber', { appointmentNumber });
+    const serviceNumber = args.serviceNumber.toUpperCase();
+    const existingUser = await ctx.runQuery('auth:getUserByServiceNumber', { serviceNumber });
     if (existingUser) {
-      throw new Error('An account with this appointment number already exists.');
+      throw new Error('An account with this service number already exists.');
     }
 
     const now = Date.now();
     const passwordHash = await bcrypt.hash(args.password, 12);
     const userId = await ctx.runMutation('auth:createPendingUser', {
       ...args,
-      appointmentNumber,
+      serviceNumber,
       passwordHash,
       now,
     });
@@ -55,7 +50,7 @@ export const register = action({
     const challengeCode = randomCode();
     const challengeId = await ctx.runMutation('auth:createVerificationChallenge', {
       userId,
-      appointmentNumber,
+      serviceNumber,
       channel: args.email ? 'email' : 'sms',
       purpose: 'registration',
       destination: args.email ?? args.phoneNumber,
@@ -66,7 +61,7 @@ export const register = action({
 
     await ctx.runAction('otp:sendOtp', {
       userId,
-      appointmentNumber,
+      serviceNumber,
       destination: args.email ?? args.phoneNumber,
       channel: args.email ? 'email' : 'sms',
       purpose: 'registration',
@@ -136,16 +131,101 @@ export const verifyRegistration = action({
   },
 });
 
+const BOOTSTRAP_PASSWORD =
+  process.env.DDSE_BOOTSTRAP_OWNER_PASSWORD ||
+  process.env.VITE_DDSE_BOOTSTRAP_OWNER_PASSWORD ||
+  process.env.BOOTSTRAP_PASSWORD ||
+  process.env.VITE_BOOTSTRAP_PASSWORD;
+
+export const bootstrapPlatformOwner = action({
+  args: {
+    password: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const password = args.password ?? BOOTSTRAP_PASSWORD;
+    if (!password) {
+      throw new Error('Bootstrap password is not configured for platform owner creation.');
+    }
+    if (password === 'Anonymous@01' && process.env.NODE_ENV !== 'development') {
+      throw new Error('Local bootstrap password is only allowed in development environments.');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await ctx.runMutation('catalog:bootstrapReferenceData', {});
+    const userId = await ctx.runMutation('auth:createPlatformOwnerInternal', {
+      passwordHash,
+      now: Date.now(),
+    });
+
+    const createdUser = await ctx.runQuery('auth:getUserByServiceNumber', {
+      serviceNumber: 'ANONYMOUS',
+    });
+    if (!createdUser) {
+      throw new Error('Platform owner bootstrap failed: user record was not created.');
+    }
+
+    return userId;
+  },
+});
+
+export const resetPlatformOwnerPassword = action({
+  args: {
+    password: v.string(),
+    bootstrapSecret: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (!BOOTSTRAP_PASSWORD) {
+      throw new Error('Bootstrap secret is not configured on the Convex server.');
+    }
+    if (args.bootstrapSecret !== BOOTSTRAP_PASSWORD) {
+      throw new Error('Invalid bootstrap secret.');
+    }
+
+    const user = await ctx.runQuery('auth:getUserByServiceNumber', {
+      serviceNumber: 'ANONYMOUS',
+    });
+    if (!user || user.activeRoleCode !== 'platform_owner') {
+      throw new Error('Platform owner account not found.');
+    }
+
+    const passwordHash = await bcrypt.hash(args.password, 12);
+    await ctx.runMutation('auth:resetPlatformOwnerPasswordInternal', {
+      userId: user._id,
+      passwordHash,
+      now: Date.now(),
+    });
+
+    return { ok: true };
+  },
+});
+
+export const updatePasswordAfterBootstrap = action({
+  args: {
+    sessionToken: v.string(),
+    password: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (!PASSWORD_RULE.test(args.password)) {
+      throw new Error('Password must be 12+ characters and include upper, lower, number, and symbol.');
+    }
+    const passwordHash = await bcrypt.hash(args.password, 12);
+    return ctx.runMutation('auth:updatePasswordAfterBootstrap', {
+      sessionToken: args.sessionToken,
+      passwordHash,
+    });
+  },
+});
+
 export const signIn = action({
   args: {
-    appointmentNumber: v.string(),
+    serviceNumber: v.string(),
     password: v.string(),
     userAgent: v.optional(v.string()),
     ipAddress: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const appointmentNumber = args.appointmentNumber.toUpperCase();
-    const user = await ctx.runQuery('auth:getUserByAppointmentNumber', { appointmentNumber });
+    const serviceNumber = args.serviceNumber.toUpperCase();
+    const user = await ctx.runQuery('auth:getUserByServiceNumber', { serviceNumber });
     if (!user) {
       throw new Error('Invalid credentials.');
     }
@@ -166,11 +246,11 @@ export const signIn = action({
       throw new Error('Invalid credentials.');
     }
 
-    if (user.mfaRequired) {
+    if (user.activeRoleCode === 'platform_owner' && (user.mustChangePassword || (user.mfaRequired && !user.mfaEnrolled))) {
       const challengeCode = randomCode();
       const challengeId = await ctx.runMutation('auth:createVerificationChallenge', {
         userId: user._id,
-        appointmentNumber,
+        serviceNumber,
         channel: user.email ? 'email' : 'sms',
         purpose: 'sign_in',
         destination: user.email ?? user.phoneNumber,
@@ -184,7 +264,40 @@ export const signIn = action({
 
       await ctx.runAction('otp:sendOtp', {
         userId: user._id,
-        appointmentNumber,
+        serviceNumber,
+        destination: user.email ?? user.phoneNumber,
+        channel: user.email ? 'email' : 'sms',
+        purpose: 'sign_in',
+        code: challengeCode,
+      });
+      return {
+        requiresOtp: true,
+        challengeId,
+        destinationMasked: user.email
+          ? user.email.replace(/(.{2}).+(@.+)/, '$1***$2')
+          : `${user.phoneNumber.slice(0, 4)}***${user.phoneNumber.slice(-2)}`,
+      };
+    }
+
+    if (user.mfaRequired && user.mfaEnrolled) {
+      const challengeCode = randomCode();
+      const challengeId = await ctx.runMutation('auth:createVerificationChallenge', {
+        userId: user._id,
+        serviceNumber,
+        channel: user.email ? 'email' : 'sms',
+        purpose: 'sign_in',
+        destination: user.email ?? user.phoneNumber,
+        codeHash: await sha256(challengeCode),
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        metadata: {
+          userAgent: args.userAgent,
+          ipAddress: args.ipAddress,
+        },
+      });
+
+      await ctx.runAction('otp:sendOtp', {
+        userId: user._id,
+        serviceNumber,
         destination: user.email ?? user.phoneNumber,
         channel: user.email ? 'email' : 'sms',
         purpose: 'sign_in',
@@ -231,21 +344,42 @@ export const verifySignIn = action({
       now: Date.now(),
     });
 
-    return ctx.runAction('authNode:createSessionInternal', {
+    const user = await ctx.runQuery('auth:getUserById', { userId: challenge.userId });
+    if (!user) {
+      throw new Error('User account not found.');
+    }
+
+    const session = await ctx.runAction('authNode:createSessionInternal', {
       userId: challenge.userId,
       userAgent: args.userAgent ?? challenge.metadata?.userAgent,
       ipAddress: args.ipAddress ?? challenge.metadata?.ipAddress,
     });
+
+    if (user.activeRoleCode === 'platform_owner' && user.mustChangePassword) {
+      await ctx.runMutation('auth:recordAuditInternal', {
+        action: 'auth.login.bootstrap_verified',
+        entityType: 'user',
+        entityId: String(user._id),
+        actorUserId: user._id,
+        actorRoleCode: user.activeRoleCode,
+      });
+      return {
+        ...session,
+        requiresBootstrapPasswordChange: true,
+      };
+    }
+
+    return session;
   },
 });
 
 export const requestPasswordReset = action({
   args: {
-    appointmentNumber: v.string(),
+    serviceNumber: v.string(),
   },
   handler: async (ctx, args) => {
-    const appointmentNumber = args.appointmentNumber.toUpperCase();
-    const user = await ctx.runQuery('auth:getUserByAppointmentNumber', { appointmentNumber });
+    const serviceNumber = args.serviceNumber.toUpperCase();
+    const user = await ctx.runQuery('auth:getUserByServiceNumber', { serviceNumber });
     if (!user || user.status !== 'active') {
       throw new Error('Active account not found for password reset.');
     }
@@ -253,7 +387,7 @@ export const requestPasswordReset = action({
     const challengeCode = randomCode();
     const challengeId = await ctx.runMutation('auth:createVerificationChallenge', {
       userId: user._id,
-      appointmentNumber,
+      serviceNumber,
       channel: user.email ? 'email' : 'sms',
       purpose: 'password_reset',
       destination: user.email ?? user.phoneNumber,
@@ -264,7 +398,7 @@ export const requestPasswordReset = action({
 
     await ctx.runAction('otp:sendOtp', {
       userId: user._id,
-      appointmentNumber,
+      serviceNumber,
       destination: user.email ?? user.phoneNumber,
       channel: user.email ? 'email' : 'sms',
       purpose: 'password_reset',
@@ -358,7 +492,7 @@ export const resendChallenge = action({
 
 export const resetPassword = action({
   args: {
-    appointmentNumber: v.string(),
+    serviceNumber: v.string(),
     resetToken: v.string(),
     password: v.string(),
     confirmPassword: v.string(),
@@ -371,29 +505,22 @@ export const resetPassword = action({
       throw new Error('Password confirmation does not match.');
     }
 
-    const appointmentNumber = args.appointmentNumber.toUpperCase();
-    const user = await ctx.runQuery('auth:getUserByAppointmentNumber', { appointmentNumber });
+    const serviceNumber = args.serviceNumber.toUpperCase();
+    const user = await ctx.runQuery('auth:getUserByServiceNumber', { serviceNumber });
     if (!user) {
       throw new Error('User account not found.');
     }
 
     const resetTokenHash = await sha256(args.resetToken);
-    const challenges = await ctx.runQuery('auth:listPasswordResetChallenges', {});
-    const matchingChallenge = challenges.find(
-      (challenge) =>
-        challenge.userId === user._id &&
-        challenge.resetTokenHash === resetTokenHash &&
-        !challenge.consumedAt &&
-        challenge.expiresAt > Date.now(),
-    );
-    if (!matchingChallenge) {
+    const challenge = await ctx.runQuery('auth:getPasswordResetChallengeByResetTokenHash', { resetTokenHash });
+    if (!challenge || challenge.userId !== user._id || challenge.consumedAt || challenge.expiresAt < Date.now()) {
       throw new Error('Reset token is invalid or expired.');
     }
 
     await ctx.runMutation('auth:updatePasswordInternal', {
       userId: user._id,
       passwordHash: await bcrypt.hash(args.password, 12),
-      challengeId: matchingChallenge._id,
+      challengeId: challenge._id,
       now: Date.now(),
     });
 
@@ -441,13 +568,14 @@ export const createSessionInternal = action({
       user: {
         id: user._id,
         fullName: user.fullName,
-        appointmentNumber: user.appointmentNumber,
+        serviceNumber: user.serviceNumber,
         roleCode: user.activeRoleCode,
         directorateCode: user.directorateCode,
-        formationCode: user.formationCode,
-        unitCode: user.unitCode,
         status: user.status,
         mfaRequired: user.mfaRequired,
+        mfaEnrolled: user.mfaEnrolled,
+        mustChangePassword: user.mustChangePassword,
+        isPlatformOwner: user.isPlatformOwner,
       },
     };
   },

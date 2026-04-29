@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
-import { Plus, Search, AlertTriangle, CheckCircle, Clock, Shield, X,
-  ChevronRight, Flame, Zap, Wind, Eye, Activity, FileText } from 'lucide-react';
+import { Plus, Search, AlertTriangle, CheckCircle, Shield, X,
+  ChevronRight, Flame, Zap, Wind, Eye, Activity } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import type { UserRole } from '../../App';
 
 const C = { red:'#ff3131', dark:'#1800ad', light:'#38b6ff' };
 
@@ -168,7 +167,7 @@ const ST_CFG = {
   closed:    {bg:'rgba(34,197,94,0.12)',bd:'#22c55e40',tx:'#22c55e',label:'Closed'},
 };
 
-export default function SafetyModule({userRole}:{userRole:UserRole|null}) {
+export default function SafetyModule() {
   const [hazards,setHazards]   = useState<Hazard[]>(INIT);
   const [view,setView]         = useState<'hazards'|'checklist'>('hazards');
   const [activeChecklist,setAC]= useState<string|null>(null);

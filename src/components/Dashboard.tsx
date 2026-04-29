@@ -279,7 +279,7 @@ function Overview({ kpiRef }: { kpiRef: React.MutableRefObject<HTMLDivElement|nu
             {[{label:'Secure Uplink',val:98,c:C.light},{label:'Data Integrity',val:100,c:'#22c55e'},{label:'Active Incidents',val:2,c:C.red,raw:true}].map((s,i)=>(
               <div key={i} className="flex items-center gap-3">
                 <span className="text-xs w-28 flex-shrink-0 text-slate-500">{s.label}</span>
-                {(s as any).raw
+                {s.raw
                   ?<span className="text-xs font-black ml-auto" style={{color:s.c}}>{s.val}</span>
                   :<>
                     <div className="flex-1 h-1 rounded-full overflow-hidden" style={{background:'rgba(255,255,255,0.06)'}}>

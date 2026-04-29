@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { gsap } from 'gsap';
-import { Plus, Search, Calendar, CheckCircle, Clock, User,
-  Trash2, Layers, MoreHorizontal, Flag } from 'lucide-react';
+import { Plus, Search, Calendar, User,
+  Trash2, Layers, Flag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import type { UserRole } from '../../App';
 
 const C = { red: '#ff3131', dark: '#1800ad', light: '#38b6ff' };
 
@@ -46,7 +45,7 @@ const COLS: {id:Task['status'];label:string}[] = [
   {id:'review',label:'In Review'},{id:'done',label:'Done'},
 ];
 
-export default function TasksModule({ userRole }: { userRole: UserRole|null }) {
+export default function TasksModule() {
   const [tasks,setTasks] = useState<Task[]>(INIT);
   const [viewMode,setVM] = useState<'list'|'kanban'>('list');
   const [search,setSrch] = useState('');
@@ -85,14 +84,6 @@ export default function TasksModule({ userRole }: { userRole: UserRole|null }) {
   };
 
   const del = (id:string)=>{setTasks(p=>p.filter(t=>t.id!==id));toast.info('Task removed');};
-
-  const Card = ({bg='rgba(4,6,22,0.85)',bd=`${C.dark}40`,...rest}:{bg?:string,bd?:string,[k:string]:any}) => (
-    <div className="rounded-2xl p-5 transition-all duration-200"
-      style={{background:bg,border:`1px solid ${bd}`,...rest.style}}
-      onMouseEnter={e=>(e.currentTarget.style.borderColor=`${C.light}40`)}
-      onMouseLeave={e=>(e.currentTarget.style.borderColor=bd)}
-      {...rest}/>
-  );
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

@@ -18,6 +18,7 @@ export const RANK_OPTIONS = [
 ];
 
 export const ROLE_OPTIONS = [
+  { code: 'platform_owner', label: 'Platform Owner', privileged: true },
   { code: 'super_admin', label: 'Super Admin', privileged: true },
   { code: 'ddse_admin', label: 'DDSE Admin', privileged: true },
   { code: 'evaluator', label: 'Evaluator / Inspector', privileged: true },

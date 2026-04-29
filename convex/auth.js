@@ -2,7 +2,7 @@ import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import { roleCanApproveRegistrations, requiresApproval } from './lib/authz';
 
-const APPOINTMENT_RULE = /^[A-Z0-9/-]{5,24}$/i;
+const APPOINTMENT_RULE = /^[A-Z0-9\/\-]{5,24}$/i;
 
 async function writeAudit(ctx, payload) {
   await ctx.db.insert('auditLogs', {
@@ -19,7 +19,7 @@ async function writeAudit(ctx, payload) {
   });
 }
 
-async function getSessionAuth(ctx, sessionToken) {
+async function getSessionAuth(ctx, sessionToken, options = { allowBootstrapPending: false }) {
   const session = await ctx.db.query('authSessions').withIndex('by_session_token', (q) => q.eq('sessionToken', sessionToken)).unique();
   if (!session || session.status !== 'active' || session.expiresAt < Date.now()) {
     return null;
@@ -30,14 +30,27 @@ async function getSessionAuth(ctx, sessionToken) {
     return null;
   }
 
+  if (user.mustChangePassword && user.activeRoleCode === 'platform_owner' && !options.allowBootstrapPending) {
+    return null;
+  }
+
   return { session, user };
+}
+
+function requireRecentStepUp(auth) {
+  if (auth.user.activeRoleCode !== 'platform_owner') {
+    return;
+  }
+  if (!auth.session.lastElevatedAt || Date.now() - auth.session.lastElevatedAt > 10 * 60 * 1000) {
+    throw new Error('Step-up authentication is required to complete this high-risk action. Please sign in again.');
+  }
 }
 
 export const currentSession = query({
   args: { sessionToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
     if (!args.sessionToken) return null;
-    const auth = await getSessionAuth(ctx, args.sessionToken);
+    const auth = await getSessionAuth(ctx, args.sessionToken, { allowBootstrapPending: true });
     if (!auth) return null;
 
     return {
@@ -48,13 +61,14 @@ export const currentSession = query({
       user: {
         id: auth.user._id,
         fullName: auth.user.fullName,
-        appointmentNumber: auth.user.appointmentNumber,
+        serviceNumber: auth.user.serviceNumber,
         roleCode: auth.user.activeRoleCode,
         directorateCode: auth.user.directorateCode,
-        formationCode: auth.user.formationCode,
-        unitCode: auth.user.unitCode,
         status: auth.user.status,
         mfaRequired: auth.user.mfaRequired,
+        mfaEnrolled: auth.user.mfaEnrolled,
+        mustChangePassword: auth.user.mustChangePassword,
+        isPlatformOwner: auth.user.isPlatformOwner,
       },
     };
   },
@@ -63,7 +77,7 @@ export const currentSession = query({
 export const signOut = mutation({
   args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
-    const auth = await getSessionAuth(ctx, args.sessionToken);
+    const auth = await getSessionAuth(ctx, args.sessionToken, { allowBootstrapPending: true });
     if (!auth) return { ok: true };
 
     await ctx.db.patch(auth.session._id, {
@@ -124,6 +138,7 @@ export const approveRegistration = mutation({
     if (!auth || !roleCanApproveRegistrations(auth.user.activeRoleCode)) {
       throw new Error('You do not have permission to review registrations.');
     }
+    requireRecentStepUp(auth);
 
     const approval = await ctx.db.get(args.registrationApprovalId);
     if (!approval) {
@@ -133,6 +148,10 @@ export const approveRegistration = mutation({
     const user = await ctx.db.get(approval.userId);
     if (!user) {
       throw new Error('User record not found.');
+    }
+
+    if (user.isPlatformOwner || user.activeRoleCode === 'platform_owner') {
+      throw new Error('Cannot modify the platform owner account through this interface.');
     }
 
     await ctx.db.patch(approval._id, {
@@ -161,14 +180,164 @@ export const approveRegistration = mutation({
   },
 });
 
-export const getUserByAppointmentNumber = query({
-  args: { appointmentNumber: v.string() },
+export const createPlatformOwnerInternal = mutation({
+  args: {
+    passwordHash: v.string(),
+    now: v.number(),
+  },
   handler: async (ctx, args) => {
-    if (!APPOINTMENT_RULE.test(args.appointmentNumber)) {
-      return null;
+    const existing = await ctx.db
+      .query('users')
+      .withIndex('by_service_number', (q) => q.eq('serviceNumber', 'ANONYMOUS'))
+      .unique();
+
+    if (existing) {
+      return existing._id;
     }
 
-    return ctx.db.query('users').withIndex('by_appointment_number', (q) => q.eq('appointmentNumber', args.appointmentNumber)).unique();
+    const userId = await ctx.db.insert('users', {
+      fullName: 'Platform Owner',
+      serviceNumber: 'ANONYMOUS',
+      phoneNumber: '0000000000',
+      passwordHash: args.passwordHash,
+      rankCode: 'General',
+      requestedRoleCode: 'platform_owner',
+      activeRoleCode: 'platform_owner',
+      directorateCode: 'HQ',
+      formationCode: 'HQ-NA',
+      unitCode: 'DDSE-HQ',
+      status: 'active',
+      mfaRequired: true,
+      mfaEnrolled: false,
+      mustChangePassword: true,
+      isPlatformOwner: true,
+      failedLoginCount: 0,
+      createdAt: args.now,
+      updatedAt: args.now,
+    });
+
+    await ctx.db.insert('userProfiles', {
+      userId,
+      notes: 'Initial bootstrap account',
+      createdAt: args.now,
+      updatedAt: args.now,
+    });
+
+    await writeAudit(ctx, {
+      action: 'platform.bootstrap',
+      entityType: 'user',
+      entityId: String(userId),
+      actorRoleCode: 'platform_owner',
+      newValue: { role: 'platform_owner', serviceNumber: 'ANONYMOUS' },
+    });
+
+    return userId;
+  },
+});
+
+export const listUsers = query({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await getSessionAuth(ctx, args.sessionToken);
+    if (!auth || !roleCanApproveRegistrations(auth.user.activeRoleCode)) {
+      throw new Error('You do not have permission to view users.');
+    }
+
+    const allUsers = await ctx.db.query('users').collect();
+    
+    // Only platform_owner can see other platform_owners
+    return allUsers.filter(u => {
+      if (u.isPlatformOwner || u.activeRoleCode === 'platform_owner') {
+        return auth.user.isPlatformOwner || auth.user.activeRoleCode === 'platform_owner';
+      }
+      return true;
+    });
+  },
+});
+
+export const updatePasswordAfterBootstrap = mutation({
+  args: {
+    sessionToken: v.string(),
+    passwordHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const auth = await getSessionAuth(ctx, args.sessionToken, { allowBootstrapPending: true });
+    if (!auth) throw new Error('Unauthorized');
+
+    await ctx.db.patch(auth.user._id, {
+      passwordHash: args.passwordHash,
+      mustChangePassword: false,
+      mfaEnrolled: true,
+      updatedAt: Date.now(),
+    });
+
+    await writeAudit(ctx, {
+      actorUserId: auth.user._id,
+      actorRoleCode: auth.user.activeRoleCode,
+      action: 'auth.password_update_bootstrap',
+      entityType: 'user',
+      entityId: String(auth.user._id),
+    });
+
+    return { ok: true };
+  },
+});
+
+export const enrollMfaInternal = mutation({
+  args: {
+    sessionToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const auth = await getSessionAuth(ctx, args.sessionToken, { allowBootstrapPending: true });
+    if (!auth) throw new Error('Unauthorized');
+
+    await ctx.db.patch(auth.user._id, {
+      mfaEnrolled: true,
+      updatedAt: Date.now(),
+    });
+
+    await writeAudit(ctx, {
+      actorUserId: auth.user._id,
+      actorRoleCode: auth.user.activeRoleCode,
+      action: 'auth.mfa_enroll',
+      entityType: 'user',
+      entityId: String(auth.user._id),
+    });
+
+    return { ok: true };
+  },
+});
+
+export const resetPlatformOwnerPasswordInternal = mutation({
+  args: {
+    userId: v.id('users'),
+    passwordHash: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      passwordHash: args.passwordHash,
+      mustChangePassword: true,
+      mfaEnrolled: false,
+      updatedAt: args.now,
+    });
+
+    await writeAudit(ctx, {
+      actorRoleCode: 'platform_owner',
+      action: 'auth.password_reset_bootstrap',
+      entityType: 'user',
+      entityId: String(args.userId),
+      newValue: { passwordReset: true },
+    });
+
+    return { ok: true };
+  },
+});
+
+export const getUserByServiceNumber = query({
+  args: { serviceNumber: v.string() },
+  handler: async (ctx, args) => {
+    return ctx.db.query('users').withIndex('by_service_number', (q) => q.eq('serviceNumber', args.serviceNumber)).unique();
   },
 });
 
@@ -188,37 +357,35 @@ export const listPasswordResetChallenges = query({
     (await ctx.db.query('verificationChallenges').withIndex('by_purpose', (q) => q.eq('purpose', 'password_reset')).collect()) ?? [],
 });
 
+export const getPasswordResetChallengeByResetTokenHash = query({
+  args: { resetTokenHash: v.string() },
+  handler: async (ctx, args) =>
+    ctx.db.query('verificationChallenges').withIndex('by_reset_token_hash', (q) => q.eq('resetTokenHash', args.resetTokenHash)).unique(),
+});
+
 export const createPendingUser = mutation({
   args: {
     fullName: v.string(),
-    appointmentNumber: v.string(),
+    serviceNumber: v.string(),
     rankCode: v.string(),
     requestedRoleCode: v.string(),
     directorateCode: v.string(),
-    formationCode: v.string(),
-    unitCode: v.string(),
     phoneNumber: v.string(),
     email: v.optional(v.string()),
-    branch: v.optional(v.string()),
-    identityNumber: v.optional(v.string()),
-    justification: v.optional(v.string()),
     passwordHash: v.string(),
     now: v.number(),
   },
   handler: async (ctx, args) => {
     const userId = await ctx.db.insert('users', {
       fullName: args.fullName,
-      appointmentNumber: args.appointmentNumber,
+      serviceNumber: args.serviceNumber,
       email: args.email,
       phoneNumber: args.phoneNumber,
-      branch: args.branch,
       passwordHash: args.passwordHash,
       rankCode: args.rankCode,
       requestedRoleCode: args.requestedRoleCode,
       activeRoleCode: 'base_soldier',
       directorateCode: args.directorateCode,
-      formationCode: args.formationCode,
-      unitCode: args.unitCode,
       status: 'pending_verification',
       emailVerifiedAt: undefined,
       phoneVerifiedAt: undefined,
@@ -231,9 +398,7 @@ export const createPendingUser = mutation({
 
     await ctx.db.insert('userProfiles', {
       userId,
-      serviceBranch: args.branch,
-      identityNumber: args.identityNumber,
-      notes: args.justification,
+      notes: undefined,
       createdAt: args.now,
       updatedAt: args.now,
     });
@@ -242,9 +407,8 @@ export const createPendingUser = mutation({
       userId,
       requestedRoleCode: args.requestedRoleCode,
       status: 'pending',
-      justification: args.justification,
-      createdAt: args.now,
       decidedAt: undefined,
+      createdAt: args.now,
     });
 
     await ctx.db.insert('registrationApprovals', {
@@ -263,7 +427,7 @@ export const createPendingUser = mutation({
 export const createVerificationChallenge = mutation({
   args: {
     userId: v.optional(v.id('users')),
-    appointmentNumber: v.optional(v.string()),
+    serviceNumber: v.optional(v.string()),
     channel: v.string(),
     purpose: v.string(),
     destination: v.string(),
@@ -274,7 +438,7 @@ export const createVerificationChallenge = mutation({
   handler: async (ctx, args) =>
     ctx.db.insert('verificationChallenges', {
       userId: args.userId,
-      appointmentNumber: args.appointmentNumber,
+      serviceNumber: args.serviceNumber,
       channel: args.channel,
       purpose: args.purpose,
       destination: args.destination,
@@ -376,6 +540,7 @@ export const storeSessionInternal = mutation({
       expiresAt: args.expiresAt,
       createdAt: Date.now(),
       lastSeenAt: Date.now(),
+      lastElevatedAt: Date.now(),
       ipAddress: args.ipAddress,
       userAgent: args.userAgent,
     });

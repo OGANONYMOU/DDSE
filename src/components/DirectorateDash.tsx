@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, RadarChart, Radar,
-  PolarGrid, PolarAngleAxis, BarChart, Bar, Cell } from 'recharts';
+  PolarGrid, PolarAngleAxis } from 'recharts';
 import { Shield, ClipboardCheck, AlertTriangle, FileBarChart, LogOut,
-  Bell, Target, TrendingUp, Clock, CheckCircle, ChevronRight, Layers,
-  Award, ShieldOff, ListTodo, Users, BookOpen, Activity, Calendar } from 'lucide-react';
+  Bell, Target, Layers,
+  Award, ShieldOff, ListTodo, BookOpen, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import type { UserRole } from '../App';
 import SafetyModule       from './modules/SafetyModule';
@@ -15,7 +15,7 @@ import AchievementsModule from './modules/AchievementsModule';
 
 const C = { red:'#ff3131', dark:'#1800ad', light:'#38b6ff' };
 
-interface Props { userRole:UserRole|null; appointment:string; userName:string; onLogout:()=>void; }
+interface Props { userRole:UserRole|null; appointment:string; onLogout:()=>void; }
 type Mod = 'overview'|'safety'|'tasks'|'reports'|'constraints'|'achievements';
 
 const SCORES = [
@@ -26,10 +26,6 @@ const SCORES = [
 const RADAR_DATA = [
   {area:'Personnel',score:88},{area:'Discipline',score:91},{area:'Logistics',score:74},
   {area:'Training',score:83},{area:'Security',score:96},{area:'Welfare',score:78},
-];
-const HAZARD_TREND = [
-  {week:'W1',open:4,closed:2},{week:'W2',open:6,closed:4},
-  {week:'W3',open:3,closed:5},{week:'W4',open:2,closed:3},
 ];
 
 // PDF Section 4 — Hazard checklist categories with current status
@@ -63,7 +59,7 @@ const NAV: {id:Mod;label:string;icon:typeof Shield}[] = [
   {id:'reports',      label:'Reports',         icon:FileBarChart},
 ];
 
-export default function DirectorateDash({ userRole, appointment, userName, onLogout }: Props) {
+export default function DirectorateDash({ userRole, appointment, onLogout }: Props) {
   const [mod, setMod]  = useState<Mod>('overview');
   const [notif,setN]   = useState(4);
   const headerRef      = useRef<HTMLElement>(null);
@@ -161,7 +157,7 @@ export default function DirectorateDash({ userRole, appointment, userName, onLog
   );
 }
 
-function DirectorateOverview({ kpiRef, appointment }: { kpiRef: any; appointment:string }) {
+function DirectorateOverview({ kpiRef, appointment }: { kpiRef: React.RefObject<HTMLDivElement>; appointment:string }) {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">

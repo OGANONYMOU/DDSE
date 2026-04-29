@@ -1,5 +1,5 @@
 import { ConvexHttpClient } from 'convex/browser';
-// @ts-ignore generated at runtime by Convex codegen; local shim is intentional during bootstrap.
+// @ts-expect-error generated at runtime by Convex codegen; local shim is intentional during bootstrap.
 import { api } from '../../convex/_generated/api';
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL;

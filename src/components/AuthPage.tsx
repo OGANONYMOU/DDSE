@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowLeft, LockKeyhole, MessageSquareCode, Shield, User2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { completeSignIn, getRegistrationFormOptions, registerPersonnel, requestPasswordReset, resendChallenge, resetPassword, verifyPasswordReset, verifyRegistration, verifySignIn } from '../lib/api';
+import { completeSignIn, getRegistrationFormOptions, registerPersonnel, requestPasswordReset, resendChallenge, resetPassword, updatePasswordAfterBootstrap, verifyPasswordReset, verifyRegistration, verifySignIn } from '../lib/api';
 import type { PlatformUser, RegistrationFormOptions } from '../types/platform';
 
-type View = 'sign_in' | 'register' | 'otp' | 'forgot' | 'reset';
+type View = 'sign_in' | 'register' | 'otp' | 'forgot' | 'reset' | 'bootstrap_reset';
 
 interface AuthPageProps {
   onAuthenticated: (user: PlatformUser) => void;
@@ -12,17 +12,12 @@ interface AuthPageProps {
 
 const initialRegistration = {
   fullName: '',
-  appointmentNumber: '',
+  serviceNumber: '',
   rankCode: '',
   requestedRoleCode: 'base_soldier',
   directorateCode: '',
-  formationCode: '',
-  unitCode: '',
   phoneNumber: '',
   email: '',
-  branch: '',
-  identityNumber: '',
-  justification: '',
   password: '',
   confirmPassword: '',
 };
@@ -31,14 +26,16 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
   const [view, setView] = useState<View>('sign_in');
   const [catalogs, setCatalogs] = useState<RegistrationFormOptions | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [signInForm, setSignInForm] = useState({ appointmentNumber: '', password: '' });
+  const [signInForm, setSignInForm] = useState({ serviceNumber: '', password: '' });
   const [registrationForm, setRegistrationForm] = useState(initialRegistration);
-  const [challengeContext, setChallengeContext] = useState<{ purpose: 'registration' | 'sign_in' | 'password_reset'; challengeId: string; destinationMasked: string; appointmentNumber?: string } | null>(null);
+  const [challengeContext, setChallengeContext] = useState<{ purpose: 'registration' | 'sign_in' | 'password_reset'; challengeId: string; destinationMasked: string; serviceNumber?: string } | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [forgotAppointmentNumber, setForgotAppointmentNumber] = useState('');
+  const [forgotServiceNumber, setForgotServiceNumber] = useState('');
   const [resetToken, setResetToken] = useState('');
   const [resetForm, setResetForm] = useState({ password: '', confirmPassword: '' });
+  const [bootstrapForm, setBootstrapForm] = useState({ password: '', confirmPassword: '' });
+  const [pendingBootstrapUser, setPendingBootstrapUser] = useState<PlatformUser | null>(null);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -52,10 +49,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
       .catch((error: Error) => toast.error(error.message));
   }, []);
 
-  const unitsForSelectedFormation = useMemo(
-    () => catalogs?.units.filter((unit) => unit.formationCode === registrationForm.formationCode) ?? [],
-    [catalogs, registrationForm.formationCode],
-  );
+  // Removed unitsForSelectedFormation since formation/unit removed
 
   async function handleSignIn(event: React.FormEvent) {
     event.preventDefault();
@@ -70,7 +64,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
           purpose: 'sign_in',
           challengeId: result.challengeId,
           destinationMasked: result.destinationMasked ?? 'secured channel',
-          appointmentNumber: signInForm.appointmentNumber,
+          serviceNumber: signInForm.serviceNumber,
         });
         setResendCooldown(60);
         setView('otp');
@@ -89,15 +83,12 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
       const result = await registerPersonnel({
         ...registrationForm,
         email: registrationForm.email || undefined,
-        branch: registrationForm.branch || undefined,
-        identityNumber: registrationForm.identityNumber || undefined,
-        justification: registrationForm.justification || undefined,
       });
       setChallengeContext({
         purpose: 'registration',
         challengeId: result.challengeId,
         destinationMasked: result.destinationMasked,
-        appointmentNumber: registrationForm.appointmentNumber,
+        serviceNumber: registrationForm.serviceNumber,
       });
       setResendCooldown(60);
       setView('otp');
@@ -113,12 +104,12 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     event.preventDefault();
     setIsBusy(true);
     try {
-      const result = await requestPasswordReset(forgotAppointmentNumber);
+      const result = await requestPasswordReset(forgotServiceNumber);
       setChallengeContext({
         purpose: 'password_reset',
         challengeId: result.challengeId,
         destinationMasked: result.destinationMasked,
-        appointmentNumber: forgotAppointmentNumber,
+        serviceNumber: forgotServiceNumber,
       });
       setResendCooldown(60);
       setView('otp');
@@ -144,8 +135,17 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
         setView('sign_in');
       } else if (challengeContext.purpose === 'sign_in') {
         const session = await verifySignIn(challengeContext.challengeId, otpCode);
-        onAuthenticated(session.user);
-        toast.success('MFA verification complete.');
+        if ('requiresBootstrapPasswordChange' in session && session.requiresBootstrapPasswordChange) {
+          setPendingBootstrapUser(session.user);
+          setBootstrapForm({ password: '', confirmPassword: '' });
+          setOtpCode('');
+          setChallengeContext(null);
+          setView('bootstrap_reset');
+          toast.success('Platform owner bootstrap verified. Create a new password to continue.');
+        } else {
+          onAuthenticated(session.user);
+          toast.success('MFA verification complete.');
+        }
       } else {
         const result = await verifyPasswordReset(challengeContext.challengeId, otpCode);
         setResetToken(result.resetToken);
@@ -161,11 +161,11 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
 
   async function handleResetPassword(event: React.FormEvent) {
     event.preventDefault();
-    if (!challengeContext?.appointmentNumber) return;
+    if (!challengeContext?.serviceNumber) return;
     setIsBusy(true);
     try {
       await resetPassword({
-        appointmentNumber: challengeContext.appointmentNumber,
+        serviceNumber: challengeContext.serviceNumber,
         resetToken,
         password: resetForm.password,
         confirmPassword: resetForm.confirmPassword,
@@ -177,6 +177,29 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
       setView('sign_in');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Password reset failed.');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleBootstrapPasswordUpdate(event: React.FormEvent) {
+    event.preventDefault();
+    if (!pendingBootstrapUser) return;
+    if (bootstrapForm.password !== bootstrapForm.confirmPassword) {
+      toast.error('Password confirmation does not match.');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      await updatePasswordAfterBootstrap(bootstrapForm.password);
+      toast.success('Password updated. Your platform owner session is now active.');
+      onAuthenticated({
+        ...pendingBootstrapUser,
+        mustChangePassword: false,
+        mfaEnrolled: true,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Password update failed.');
     } finally {
       setIsBusy(false);
     }
@@ -223,9 +246,9 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
 
             {view === 'sign_in' && (
               <form className="space-y-5" onSubmit={handleSignIn}>
-                <Field label="Appointment / Service Number">
+                <Field label="Service Number">
                   <InputBox icon={<User2 className="h-4 w-4 text-slate-500" />}>
-                    <input className="w-full bg-transparent text-sm text-white outline-none" value={signInForm.appointmentNumber} onChange={(event) => setSignInForm((current) => ({ ...current, appointmentNumber: event.target.value }))} required />
+                    <input className="w-full bg-transparent text-sm text-white outline-none" value={signInForm.serviceNumber} onChange={(event) => setSignInForm((current) => ({ ...current, serviceNumber: event.target.value }))} required />
                   </InputBox>
                 </Field>
                 <Field label="Password">
@@ -240,17 +263,12 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
             {view === 'register' && (
               <form className="grid gap-4 md:grid-cols-2" onSubmit={handleRegistration}>
                 <Field label="Full Name"><SimpleInput value={registrationForm.fullName} onChange={(value) => setRegistrationForm((current) => ({ ...current, fullName: value }))} /></Field>
-                <Field label="Appointment / Service Number"><SimpleInput value={registrationForm.appointmentNumber} onChange={(value) => setRegistrationForm((current) => ({ ...current, appointmentNumber: value }))} /></Field>
+                <Field label="Service Number"><SimpleInput value={registrationForm.serviceNumber} onChange={(value) => setRegistrationForm((current) => ({ ...current, serviceNumber: value }))} /></Field>
                 <Field label="Rank"><SelectBox value={registrationForm.rankCode} onChange={(value) => setRegistrationForm((current) => ({ ...current, rankCode: value }))} options={catalogs?.ranks.map((rank) => ({ value: rank.code, label: rank.label })) ?? []} /></Field>
                 <Field label="Role Request"><SelectBox value={registrationForm.requestedRoleCode} onChange={(value) => setRegistrationForm((current) => ({ ...current, requestedRoleCode: value }))} options={catalogs?.roles.map((role) => ({ value: role.code, label: `${role.label}${role.privileged ? ' (Approval Required)' : ''}` })) ?? []} /></Field>
                 <Field label="Directorate"><SelectBox value={registrationForm.directorateCode} onChange={(value) => setRegistrationForm((current) => ({ ...current, directorateCode: value }))} options={catalogs?.directorates.map((item) => ({ value: item.code, label: item.name })) ?? []} /></Field>
-                <Field label="Formation"><SelectBox value={registrationForm.formationCode} onChange={(value) => setRegistrationForm((current) => ({ ...current, formationCode: value, unitCode: '' }))} options={catalogs?.formations.map((item) => ({ value: item.code, label: item.name })) ?? []} /></Field>
-                <Field label="Unit"><SelectBox value={registrationForm.unitCode} onChange={(value) => setRegistrationForm((current) => ({ ...current, unitCode: value }))} options={unitsForSelectedFormation.map((item) => ({ value: item.code, label: item.name }))} /></Field>
                 <Field label="Phone Number"><SimpleInput value={registrationForm.phoneNumber} onChange={(value) => setRegistrationForm((current) => ({ ...current, phoneNumber: value }))} /></Field>
                 <Field label="Email"><SimpleInput value={registrationForm.email} onChange={(value) => setRegistrationForm((current) => ({ ...current, email: value }))} /></Field>
-                <Field label="Service Branch"><SimpleInput value={registrationForm.branch} onChange={(value) => setRegistrationForm((current) => ({ ...current, branch: value }))} /></Field>
-                <Field label="Identity / Personnel Number"><SimpleInput value={registrationForm.identityNumber} onChange={(value) => setRegistrationForm((current) => ({ ...current, identityNumber: value }))} /></Field>
-                <Field label="Role Justification"><SimpleInput value={registrationForm.justification} onChange={(value) => setRegistrationForm((current) => ({ ...current, justification: value }))} /></Field>
                 <Field label="Password"><SimpleInput type="password" value={registrationForm.password} onChange={(value) => setRegistrationForm((current) => ({ ...current, password: value }))} /></Field>
                 <Field label="Confirm Password"><SimpleInput type="password" value={registrationForm.confirmPassword} onChange={(value) => setRegistrationForm((current) => ({ ...current, confirmPassword: value }))} /></Field>
                 <div className="md:col-span-2">
@@ -261,8 +279,8 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
 
             {view === 'forgot' && (
               <form className="space-y-5" onSubmit={handleForgotPassword}>
-                <Field label="Appointment / Service Number">
-                  <SimpleInput value={forgotAppointmentNumber} onChange={setForgotAppointmentNumber} />
+                <Field label="Service Number">
+                  <SimpleInput value={forgotServiceNumber} onChange={setForgotServiceNumber} />
                 </Field>
                 <PrimaryButton busy={isBusy}>Request Password Reset</PrimaryButton>
               </form>
@@ -311,6 +329,22 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
                 <Field label="New Password"><SimpleInput type="password" value={resetForm.password} onChange={(value) => setResetForm((current) => ({ ...current, password: value }))} /></Field>
                 <Field label="Confirm Password"><SimpleInput type="password" value={resetForm.confirmPassword} onChange={(value) => setResetForm((current) => ({ ...current, confirmPassword: value }))} /></Field>
                 <PrimaryButton busy={isBusy}>Reset Password</PrimaryButton>
+              </form>
+            )}
+            {view === 'bootstrap_reset' && (
+              <form className="space-y-5" onSubmit={handleBootstrapPasswordUpdate}>
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
+                  <div className="flex items-center gap-3">
+                    <LockKeyhole className="h-5 w-5 text-sky-300" />
+                    <div>
+                      <p className="text-sm font-semibold text-white">Platform Owner First Login</p>
+                      <p className="text-xs text-slate-400">Set a new password and finalize your first login. MFA was verified during sign-in.</p>
+                    </div>
+                  </div>
+                </div>
+                <Field label="New Password"><SimpleInput type="password" value={bootstrapForm.password} onChange={(value) => setBootstrapForm((current) => ({ ...current, password: value }))} /></Field>
+                <Field label="Confirm Password"><SimpleInput type="password" value={bootstrapForm.confirmPassword} onChange={(value) => setBootstrapForm((current) => ({ ...current, confirmPassword: value }))} /></Field>
+                <PrimaryButton busy={isBusy}>Complete First Login</PrimaryButton>
               </form>
             )}
           </section>

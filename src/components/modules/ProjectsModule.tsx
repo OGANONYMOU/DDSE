@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Search, TrendingUp, TrendingDown, Calendar, DollarSign, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { Search, TrendingUp, Calendar, DollarSign, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import type { UserRole } from '../../App';
 
 const C = { red: '#ff3131', dark: '#1800ad', light: '#38b6ff' };
 
@@ -22,7 +21,7 @@ const statusCfg: Record<string,{bg:string;bd:string;tx:string;icon:typeof CheckC
 };
 const fmt = (n: number) => `₦${(n/1000000).toFixed(1)}M`;
 
-export default function ProjectsModule({ }: { userRole: UserRole|null }) {
+export default function ProjectsModule() {
   const [data] = useState(MOCK);
   const [search, setSearch] = useState('');
   const filtered = data.filter(p => p.name.toLowerCase().includes(search.toLowerCase())||p.directorate.toLowerCase().includes(search.toLowerCase()));

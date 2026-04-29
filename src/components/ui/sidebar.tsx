@@ -607,9 +607,7 @@ function SidebarMenuSkeleton({
   showIcon?: boolean
 }) {
   // Random width between 50 to 90%.
-  const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  }, [])
+  const width = `${Math.floor(Math.random() * 40) + 50}%`
 
   return (
     <div
@@ -698,6 +696,7 @@ function SidebarMenuSubButton({
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export {
   Sidebar,
   SidebarContent,

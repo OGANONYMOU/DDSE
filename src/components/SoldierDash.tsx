@@ -1,23 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
-import { CheckCircle, Clock, AlertTriangle, Shield, Star, LogOut,
-  Bell, ChevronRight, Flame, Target, Send, Camera, FileText,
-  Award, Calendar, TrendingUp, User, Zap, Lock, Trophy,
+import { CheckCircle, Shield, LogOut,
+  Flame, Send, FileText,
+  Calendar, Lock, Trophy,
   BookOpen, ClipboardCheck, Package, Activity } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import type { UserRole } from '../App';
 
 const C = { red:'#ff3131', dark:'#1800ad', light:'#38b6ff' };
 
-interface Props { userRole:UserRole|null; appointment:string; userName:string; onLogout:()=>void; }
+interface Props { appointment:string; onLogout:()=>void; }
 
 interface Task {
   id:string; title:string; description:string; priority:'low'|'medium'|'high'|'critical';
   status:'pending'|'in_progress'|'submitted'|'approved';
   dueDate:string; points:number; category:string; submittedNote?:string;
   pdfRef:string;
+}
+
+interface Achievement {
+  id: string;
+  title: string;
+  icon: any; // Lucide icon
+  points: number;
+  earned: boolean;
+  tier: 'bronze' | 'silver' | 'gold' | 'platinum';
+  progress?: number;
+  target?: number;
 }
 
 // Tasks sourced from PDF checklists
@@ -66,10 +76,9 @@ const P_CFG = {
   high:{c:C.red,bg:`${C.red}12`,bd:`${C.red}35`},
   critical:{c:'#ff6060',bg:`${C.red}25`,bd:`${C.red}55`},
 };
-const RANKS = ['Private','L/Corporal','Corporal','Sergeant','Staff Sergeant'];
 
 // Achievements for soldiers
-const SOLDIER_ACHIEVEMENTS = [
+const SOLDIER_ACHIEVEMENTS: Achievement[] = [
   {id:'SA001',title:'First Task Submitted',     icon:Send,   points:50,   earned:true,  tier:'bronze'},
   {id:'SA002',title:'Safety Scout',             icon:Shield, points:100,  earned:true,  tier:'silver'},
   {id:'SA003',title:'Perfect Attendance',       icon:Calendar,points:200, earned:false, progress:22,target:30,tier:'gold'},
@@ -89,7 +98,7 @@ const DAILY_LOGS: DailyLog[] = [
   {date:'2026-03-01',checkIn:'06:05',tasksCompleted:2,points:65,notes:'Kit inspection. Vehicle serviceability check.'},
 ];
 
-export default function SoldierDash({ userRole, appointment, userName, onLogout }: Props) {
+export default function SoldierDash({ appointment, onLogout }: Props) {
   const [tasks, setTasks]     = useState<Task[]>(INIT_TASKS);
   const [tab, setTab]         = useState<Tab>('tasks');
   const [submitting, setSub]  = useState<string|null>(null);
@@ -97,7 +106,6 @@ export default function SoldierDash({ userRole, appointment, userName, onLogout 
   const [checkedIn, setCI]    = useState(false);
   const [todayLog, setTL]     = useState({ checkIn:'', notes:'' });
   const headerRef             = useRef<HTMLElement>(null);
-  const contentRef            = useRef<HTMLDivElement>(null);
   const taskRef               = useRef<HTMLDivElement>(null);
 
   const done     = tasks.filter(t=>t.status==='approved').length;
@@ -376,9 +384,9 @@ export default function SoldierDash({ userRole, appointment, userName, onLogout 
                       ):(
                         <>
                           <div className="h-1.5 rounded-full overflow-hidden mb-1" style={{background:'rgba(255,255,255,0.06)'}}>
-                            <div className="h-full rounded-full" style={{width:`${((ach as any).progress/(ach as any).target)*100}%`,background:`linear-gradient(90deg,${C.dark}80,${tc}60)`}}/>
+                            <div className="h-full rounded-full" style={{width:`${(ach.progress! / ach.target!) * 100}%`,background:`linear-gradient(90deg,${C.dark}80,${tc}60)`}}/>
                           </div>
-                          <p className="text-[10px] text-slate-600">{(ach as any).progress}/{(ach as any).target} — +{ach.points} pts</p>
+                          <p className="text-[10px] text-slate-600">{ach.progress}/{ach.target} — +{ach.points} pts</p>
                         </>
                       )}
                     </div>

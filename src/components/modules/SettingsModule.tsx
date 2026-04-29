@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import { Users, Shield, Bell, Lock, Smartphone, UserPlus, UserX, CheckCircle, Clock, Eye, EyeOff } from 'lucide-react';
+import { Users, Shield, Bell, Lock, Smartphone, UserPlus, UserX, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import type { UserRole } from '../../App';
 
 const C = { red: '#ff3131', dark: '#1800ad', light: '#38b6ff' };
 
@@ -25,7 +23,7 @@ const statusCfg: Record<string,{bg:string;bd:string;tx:string}> = {
 };
 const roleCfg: Record<string,string> = {super_admin:C.red,evaluator:C.light,directorate_officer:'#a855f7'};
 
-export default function SettingsModule({ userRole }: { userRole: UserRole|null }) {
+export default function SettingsModule() {
   const [tab, setTab]         = useState<'users'|'security'|'notifications'>('users');
   const [notifs, setNotifs]   = useState({ email:true, sms:true, desktop:false, riskAlerts:true });
   const [security, setSec]    = useState({ twoFactor:true, sessionTimeout:'30' });

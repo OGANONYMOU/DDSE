@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { Award, Star, Trophy, Shield, Target, TrendingUp,
   CheckCircle, Zap, Medal, Crown, Lock, Users } from 'lucide-react';
-import type { UserRole } from '../../App';
 
 const C = { red: '#ff3131', dark: '#1800ad', light: '#38b6ff' };
 
@@ -53,9 +52,9 @@ const ACHIEVEMENTS: Achievement[] = [
     category:'projects', tier:'gold', icon:TrendingUp, points:600, earned:false, progress:0, target:1 },
 ];
 
-function ClipboardIcon(props: any) { return <CheckCircle {...props}/>; }
+function ClipboardIcon(props: React.SVGProps<SVGSVGElement>) { return <CheckCircle {...props}/>; }
 
-export default function AchievementsModule({ userRole }: { userRole: UserRole|null }) {
+export default function AchievementsModule() {
   const [filter, setFilter] = useState<'all'|'earned'|'locked'>('all');
   const [catFilter, setCat] = useState('all');
   const gridRef = useRef<HTMLDivElement>(null);

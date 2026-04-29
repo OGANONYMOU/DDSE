@@ -11,7 +11,34 @@ function requireSessionToken() {
 }
 
 export async function bootstrapPlatform() {
-  return convex.mutation(api.catalog.bootstrapReferenceData, {});
+  await convex.mutation(api.catalog.bootstrapReferenceData, {});
+  const localBootstrapPassword = import.meta.env.DEV
+    ? import.meta.env.VITE_DDSE_BOOTSTRAP_OWNER_PASSWORD || import.meta.env.VITE_BOOTSTRAP_PASSWORD
+    : undefined;
+
+  try {
+    await convex.action(api.authNode.bootstrapPlatformOwner, {
+      password: localBootstrapPassword,
+    });
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message.includes('Platform owner already exists')) {
+      return;
+    }
+    console.warn('Platform owner bootstrap skipped:', error?.message ?? error);
+  }
+}
+
+export async function updatePasswordAfterBootstrap(password: string) {
+  return convex.action(api.authNode.updatePasswordAfterBootstrap, {
+    sessionToken: requireSessionToken(),
+    password,
+  });
+}
+
+export async function enrollMfa() {
+  return convex.mutation(api.auth.enrollMfaInternal, {
+    sessionToken: requireSessionToken(),
+  });
 }
 
 export async function getRegistrationFormOptions() {
@@ -20,17 +47,12 @@ export async function getRegistrationFormOptions() {
 
 export async function registerPersonnel(payload: {
   fullName: string;
-  appointmentNumber: string;
+  serviceNumber: string;
   rankCode: string;
   requestedRoleCode: string;
   directorateCode: string;
-  formationCode: string;
-  unitCode: string;
   phoneNumber: string;
   email?: string;
-  branch?: string;
-  identityNumber?: string;
-  justification?: string;
   password: string;
   confirmPassword: string;
 }) {
@@ -45,7 +67,7 @@ export async function resendChallenge(challengeId: string) {
   return convex.action(api.authNode.resendChallenge, { challengeId }) as Promise<{ challengeId: string; destinationMasked: string }>;
 }
 
-export async function signIn(payload: { appointmentNumber: string; password: string; userAgent?: string }) {
+export async function signIn(payload: { serviceNumber: string; password: string; userAgent?: string }) {
   return convex.action(api.authNode.signIn, payload) as Promise<{ requiresOtp?: boolean; challengeId?: string; destinationMasked?: string } | SessionPayload>;
 }
 
@@ -55,16 +77,16 @@ export async function verifySignIn(challengeId: string, code: string) {
   return session;
 }
 
-export async function completeSignIn(payload: { appointmentNumber: string; password: string }) {
-  const result = await signIn({ ...payload, userAgent: navigator.userAgent });
+export async function completeSignIn(payload: { serviceNumber: string; password: string }) {
+  const result = await signIn({ serviceNumber: payload.serviceNumber, password: payload.password, userAgent: navigator.userAgent });
   if ('sessionToken' in result) {
     storeSessionToken(result.sessionToken, result.expiresAt);
   }
   return result;
 }
 
-export async function requestPasswordReset(appointmentNumber: string) {
-  return convex.action(api.authNode.requestPasswordReset, { appointmentNumber }) as Promise<{ challengeId: string; destinationMasked: string }>;
+export async function requestPasswordReset(serviceNumber: string) {
+  return convex.action(api.authNode.requestPasswordReset, { serviceNumber }) as Promise<{ challengeId: string; destinationMasked: string }>;
 }
 
 export async function verifyPasswordReset(challengeId: string, code: string) {
@@ -72,7 +94,7 @@ export async function verifyPasswordReset(challengeId: string, code: string) {
 }
 
 export async function resetPassword(payload: {
-  appointmentNumber: string;
+  serviceNumber: string;
   resetToken: string;
   password: string;
   confirmPassword: string;
@@ -133,13 +155,15 @@ export async function createInspection(payload: {
   moduleCode: string;
   title: string;
   directorateCode: string;
-  formationCode: string;
-  unitCode: string;
+  formationCode?: string;
+  unitCode?: string;
   subjectName?: string;
   subjectReference?: string;
 }) {
   return convex.mutation(api.inspections.createInspection, {
     sessionToken: requireSessionToken(),
+    formationCode: payload.formationCode ?? '',
+    unitCode: payload.unitCode ?? '',
     ...payload,
   }) as Promise<string>;
 }

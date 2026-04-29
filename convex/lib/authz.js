@@ -5,10 +5,12 @@ export function requiresApproval(roleCode) {
 }
 
 export function roleCanApproveRegistrations(roleCode) {
-  return ['super_admin', 'ddse_admin'].includes(roleCode);
+  return ['platform_owner', 'super_admin', 'ddse_admin'].includes(roleCode);
 }
 
 export function roleCanAccessModule(roleCode, moduleCode) {
+  if (roleCode === 'platform_owner') return true;
+
   if (moduleCode === 'armoury') {
     return ['super_admin', 'ddse_admin', 'base_commander', 'audit_reviewer'].includes(roleCode);
   }
@@ -39,6 +41,7 @@ export function roleCanAccessModule(roleCode, moduleCode) {
 }
 
 export function roleCanCreateInspection(roleCode, moduleCode) {
+  if (roleCode === 'platform_owner') return true;
   if (!roleCanAccessModule(roleCode, moduleCode)) {
     return false;
   }
@@ -47,6 +50,7 @@ export function roleCanCreateInspection(roleCode, moduleCode) {
 }
 
 export function roleCanDownloadEvidence(roleCode, moduleCode, classification) {
+  if (roleCode === 'platform_owner') return true;
   if (classification === 'restricted_armoury' || moduleCode === 'armoury') {
     return ['super_admin', 'ddse_admin', 'base_commander', 'audit_reviewer'].includes(roleCode);
   }

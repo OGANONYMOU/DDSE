@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { FileCheck2, Layers3, LogOut, MessageSquareCode, ShieldCheck, Siren } from 'lucide-react';
 import { toast } from 'sonner';
 import { addCorrectiveAction, addReviewComment, approveRegistration, createFinding, createInspection, getCommandCenterSummary, getEvidenceDownloadUrl, getInspectionDetail, getModules, getPendingApprovals, listInspections, saveInspectionResponse, transitionInspection, uploadEvidence } from '../lib/api';
@@ -16,11 +16,11 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
   const [selectedInspectionId, setSelectedInspectionId] = useState<string | null>(null);
   const [detail, setDetail] = useState<InspectionDetail | null>(null);
   const [activeModule, setActiveModule] = useState('hazard_safety');
-  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<Record<string, unknown>[]>([]);
   const [newInspectionTitle, setNewInspectionTitle] = useState('');
   const [loading, setLoading] = useState(true);
 
-  async function loadDashboard() {
+  const loadDashboard = useCallback(async () => {
     const [dashboardSummary, moduleList, inspectionList, approvals] = await Promise.all([
       getCommandCenterSummary(),
       getModules(),
@@ -30,15 +30,18 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
     setSummary(dashboardSummary);
     setModules(moduleList);
     setInspections(inspectionList);
-    setPendingApprovals(approvals as any[]);
-  }
+    setPendingApprovals(approvals as Record<string, unknown>[]);
+  }, [activeModule]);
 
   useEffect(() => {
     setLoading(true);
+  }, [activeModule]);
+
+  useEffect(() => {
     loadDashboard()
       .catch((error: Error) => toast.error(error.message))
       .finally(() => setLoading(false));
-  }, [activeModule]);
+  }, [loadDashboard]);
 
   useEffect(() => {
     if (!selectedInspectionId) {
@@ -62,8 +65,8 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
         moduleCode: activeModule,
         title: newInspectionTitle,
         directorateCode: user.directorateCode,
-        formationCode: user.formationCode,
-        unitCode: user.unitCode,
+        formationCode: '',
+        unitCode: '',
       });
       setNewInspectionTitle('');
       await loadDashboard();
@@ -81,7 +84,7 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-sky-300/80">DDSE Secure Command Platform</p>
             <h1 className="mt-1 text-2xl font-black text-white">Operational Command Center</h1>
-            <p className="mt-1 text-sm text-slate-400">{user.fullName} · {user.appointmentNumber} · {user.roleCode.replaceAll('_', ' ')}</p>
+            <p className="mt-1 text-sm text-slate-400">{user.fullName} · {user.serviceNumber} · {user.roleCode.replaceAll('_', ' ')}</p>
           </div>
           <button className="inline-flex items-center gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20" onClick={() => void onLogout()} type="button">
             <LogOut className="h-4 w-4" />
@@ -141,7 +144,7 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
                     {pendingApprovals.map((approval) => (
                       <div key={approval.approvalId} className="rounded-2xl border border-amber-500/15 bg-amber-500/10 p-4">
                         <p className="text-sm font-semibold text-white">{approval.fullName}</p>
-                        <p className="mt-1 text-xs text-amber-100/80">{approval.appointmentNumber} · {approval.requestedRoleCode.replaceAll('_', ' ')}</p>
+                        <p className="mt-1 text-xs text-amber-100/80">{approval.serviceNumber} · {approval.requestedRoleCode.replaceAll('_', ' ')}</p>
                         <div className="mt-3 flex gap-2">
                           <button className="rounded-xl bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100" onClick={() => approveRegistration(approval.approvalId, 'approved').then(loadDashboard)} type="button">Approve</button>
                           <button className="rounded-xl bg-rose-500/20 px-3 py-2 text-xs font-semibold text-rose-100" onClick={() => approveRegistration(approval.approvalId, 'rejected').then(loadDashboard)} type="button">Reject</button>

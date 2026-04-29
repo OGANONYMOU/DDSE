@@ -3,11 +3,12 @@ import { Toaster } from 'sonner';
 import AuthPage from './components/AuthPage';
 import CommandCenter from './components/CommandCenter';
 import LoadingScreen from './components/LoadingScreen';
+import StepUpAuth from './components/StepUpAuth';
 import { bootstrapPlatform, restoreSession, signOut } from './lib/api';
 import type { PlatformUser } from './types/platform';
 
 function App() {
-  const [status, setStatus] = useState<'loading' | 'auth' | 'ready'>('loading');
+  const [status, setStatus] = useState<'loading' | 'auth' | 'stepup' | 'ready'>('loading');
   const [user, setUser] = useState<PlatformUser | null>(null);
 
   useEffect(() => {
@@ -24,7 +25,11 @@ function App() {
           return;
         }
         setUser(session.user);
-        setStatus('ready');
+        if (session.user.mustChangePassword || (session.user.mfaRequired && !session.user.mfaEnrolled)) {
+          setStatus('stepup');
+        } else {
+          setStatus('ready');
+        }
       })
       .catch(() => {
         if (mounted) setStatus('auth');
@@ -53,6 +58,19 @@ function App() {
         <AuthPage
           onAuthenticated={(sessionUser) => {
             setUser(sessionUser);
+            if (sessionUser.mustChangePassword || (sessionUser.mfaRequired && !sessionUser.mfaEnrolled)) {
+              setStatus('stepup');
+            } else {
+              setStatus('ready');
+            }
+          }}
+        />
+      )}
+      {status === 'stepup' && user && (
+        <StepUpAuth
+          user={user}
+          onComplete={(updatedUser) => {
+            setUser(updatedUser);
             setStatus('ready');
           }}
         />

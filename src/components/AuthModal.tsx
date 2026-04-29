@@ -1,7 +1,7 @@
 // AuthModal.tsx - legacy modal (not used in main flow - AuthPage.tsx handles auth)
 // Kept for compatibility
 import { useState } from 'react';
-import { X, Lock, User, ArrowRight, ShieldAlert } from 'lucide-react';
+import { X, Lock, User, ArrowRight } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 

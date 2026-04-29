@@ -4,34 +4,32 @@ import { v } from "convex/values";
 export default defineSchema({
   users: defineTable({
     fullName: v.string(),
-    appointmentNumber: v.string(),
+    serviceNumber: v.string(),
     email: v.optional(v.string()),
     phoneNumber: v.string(),
-    branch: v.optional(v.string()),
     passwordHash: v.string(),
     rankCode: v.string(),
     requestedRoleCode: v.string(),
     activeRoleCode: v.string(),
     directorateCode: v.string(),
-    formationCode: v.string(),
-    unitCode: v.string(),
     status: v.string(),
     emailVerifiedAt: v.optional(v.number()),
     phoneVerifiedAt: v.optional(v.number()),
     mfaRequired: v.boolean(),
+    mfaEnrolled: v.optional(v.boolean()),
+    mustChangePassword: v.optional(v.boolean()),
+    isPlatformOwner: v.optional(v.boolean()),
     failedLoginCount: v.number(),
     lastLoginAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_appointment_number", ["appointmentNumber"])
+    .index("by_service_number", ["serviceNumber"])
     .index("by_email", ["email"])
     .index("by_status", ["status"]),
 
   userProfiles: defineTable({
     userId: v.id("users"),
-    serviceBranch: v.optional(v.string()),
-    identityNumber: v.optional(v.string()),
     notes: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -66,7 +64,6 @@ export default defineSchema({
     requestedRoleCode: v.string(),
     requestedByUserId: v.optional(v.id("users")),
     status: v.string(),
-    justification: v.optional(v.string()),
     decidedByUserId: v.optional(v.id("users")),
     decisionReason: v.optional(v.string()),
     createdAt: v.number(),
@@ -89,6 +86,7 @@ export default defineSchema({
     expiresAt: v.number(),
     createdAt: v.number(),
     lastSeenAt: v.number(),
+    lastElevatedAt: v.number(),
     ipAddress: v.optional(v.string()),
     userAgent: v.optional(v.string()),
   })
@@ -97,7 +95,7 @@ export default defineSchema({
 
   verificationChallenges: defineTable({
     userId: v.optional(v.id("users")),
-    appointmentNumber: v.optional(v.string()),
+    serviceNumber: v.optional(v.string()),
     channel: v.string(),
     purpose: v.string(),
     destination: v.string(),
@@ -107,11 +105,11 @@ export default defineSchema({
     consumedAt: v.optional(v.number()),
     metadata: v.optional(v.any()),
     createdAt: v.number(),
-  }).index("by_purpose", ["purpose"]),
+  }).index("by_purpose", ["purpose"]).index("by_reset_token_hash", ["resetTokenHash"]),
 
   otpEvents: defineTable({
     userId: v.optional(v.id("users")),
-    appointmentNumber: v.optional(v.string()),
+    serviceNumber: v.optional(v.string()),
     purpose: v.string(),
     channel: v.string(),
     destination: v.string(),
@@ -120,7 +118,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_purpose", ["purpose"])
-    .index("by_appointment_number", ["appointmentNumber"]),
+    .index("by_service_number", ["serviceNumber"]),
 
   inspectionTemplates: defineTable({
     moduleCode: v.string(),

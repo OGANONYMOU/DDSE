@@ -77,15 +77,11 @@ export const registrationFormOptions = query({
   handler: async (ctx) => {
     const ranks = await ctx.db.query('rankCatalog').collect();
     const directorates = await ctx.db.query('directorateCatalog').collect();
-    const formations = await ctx.db.query('formationCatalog').collect();
-    const units = await ctx.db.query('unitCatalog').collect();
 
     return {
       ranks: ranks.sort((left, right) => left.order - right.order),
       directorates,
-      formations,
-      units,
-      roles: ROLE_OPTIONS.map((role) => ({
+      roles: ROLE_OPTIONS.filter((role) => role.code !== 'platform_owner').map((role) => ({
         code: role.code,
         label: role.label,
         privileged: role.privileged,

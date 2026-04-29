@@ -11,7 +11,8 @@
     "legacy:server": "node server/index.js",
     "test:legacy": "node --test server/**/*.test.js",
     "convex:dev": "convex dev",
-    "convex:deploy": "convex deploy"
+    "convex:deploy": "convex deploy",
+    "bootstrap:platform": "node scripts/bootstrap-platform.js"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
