@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, LockKeyhole, MessageSquareCode, Shield, User2 } from 'lucide-react';
+import { Shield, User2, LockKeyhole } from 'lucide-react';
 import { toast } from 'sonner';
-import { completeSignIn, getRegistrationFormOptions, registerPersonnel, requestPasswordReset, resendChallenge, resetPassword, updatePasswordAfterBootstrap, verifyPasswordReset, verifyRegistration, verifySignIn } from '../lib/api';
+import { completeSignIn, getRegistrationFormOptions, registerPersonnel, requestPasswordReset } from '../lib/api';
 import type { PlatformUser, RegistrationFormOptions } from '../types/platform';
 
-type View = 'sign_in' | 'register' | 'otp' | 'forgot' | 'reset' | 'bootstrap_reset';
+type View = 'sign_in' | 'register' | 'forgot';
 
 interface AuthPageProps {
   onAuthenticated: (user: PlatformUser) => void;
@@ -28,20 +28,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
   const [isBusy, setIsBusy] = useState(false);
   const [signInForm, setSignInForm] = useState({ serviceNumber: '', password: '' });
   const [registrationForm, setRegistrationForm] = useState(initialRegistration);
-  const [challengeContext, setChallengeContext] = useState<{ purpose: 'registration' | 'sign_in' | 'password_reset'; challengeId: string; destinationMasked: string; serviceNumber?: string } | null>(null);
-  const [otpCode, setOtpCode] = useState('');
-  const [resendCooldown, setResendCooldown] = useState(0);
   const [forgotServiceNumber, setForgotServiceNumber] = useState('');
-  const [resetToken, setResetToken] = useState('');
-  const [resetForm, setResetForm] = useState({ password: '', confirmPassword: '' });
-  const [bootstrapForm, setBootstrapForm] = useState({ password: '', confirmPassword: '' });
-  const [pendingBootstrapUser, setPendingBootstrapUser] = useState<PlatformUser | null>(null);
-
-  useEffect(() => {
-    if (resendCooldown <= 0) return undefined;
-    const timer = window.setTimeout(() => setResendCooldown((current) => current - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [resendCooldown]);
 
   useEffect(() => {
     getRegistrationFormOptions()
@@ -56,19 +43,8 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     setIsBusy(true);
     try {
       const result = await completeSignIn(signInForm);
-      if ('sessionToken' in result) {
-        onAuthenticated(result.user);
-        toast.success('Secure session established.');
-      } else if (result.requiresOtp && result.challengeId) {
-        setChallengeContext({
-          purpose: 'sign_in',
-          challengeId: result.challengeId,
-          destinationMasked: result.destinationMasked ?? 'secured channel',
-          serviceNumber: signInForm.serviceNumber,
-        });
-        setResendCooldown(60);
-        setView('otp');
-      }
+      onAuthenticated(result.user);
+      toast.success('Secure session established.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Sign in failed.');
     } finally {
@@ -80,19 +56,13 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     event.preventDefault();
     setIsBusy(true);
     try {
-      const result = await registerPersonnel({
+      await registerPersonnel({
         ...registrationForm,
         email: registrationForm.email || undefined,
       });
-      setChallengeContext({
-        purpose: 'registration',
-        challengeId: result.challengeId,
-        destinationMasked: result.destinationMasked,
-        serviceNumber: registrationForm.serviceNumber,
-      });
-      setResendCooldown(60);
-      setView('otp');
-      toast.success('Registration submitted. Verify the one-time code to continue.');
+      toast.success('Registration completed. Sign in with your new credentials.');
+      setRegistrationForm(initialRegistration);
+      setView('sign_in');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Registration failed.');
     } finally {
@@ -104,102 +74,12 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     event.preventDefault();
     setIsBusy(true);
     try {
-      const result = await requestPasswordReset(forgotServiceNumber);
-      setChallengeContext({
-        purpose: 'password_reset',
-        challengeId: result.challengeId,
-        destinationMasked: result.destinationMasked,
-        serviceNumber: forgotServiceNumber,
-      });
-      setResendCooldown(60);
-      setView('otp');
-      toast.success('Password reset challenge dispatched.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not start password reset.');
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function handleOtpVerification(event: React.FormEvent) {
-    event.preventDefault();
-    if (!challengeContext) return;
-    setIsBusy(true);
-    try {
-      if (challengeContext.purpose === 'registration') {
-        const result = await verifyRegistration(challengeContext.challengeId, otpCode);
-        toast.success(result.message);
-        setRegistrationForm(initialRegistration);
-        setOtpCode('');
-        setChallengeContext(null);
-        setView('sign_in');
-      } else if (challengeContext.purpose === 'sign_in') {
-        const session = await verifySignIn(challengeContext.challengeId, otpCode);
-        if ('requiresBootstrapPasswordChange' in session && session.requiresBootstrapPasswordChange) {
-          setPendingBootstrapUser(session.user);
-          setBootstrapForm({ password: '', confirmPassword: '' });
-          setOtpCode('');
-          setChallengeContext(null);
-          setView('bootstrap_reset');
-          toast.success('Platform owner bootstrap verified. Create a new password to continue.');
-        } else {
-          onAuthenticated(session.user);
-          toast.success('MFA verification complete.');
-        }
-      } else {
-        const result = await verifyPasswordReset(challengeContext.challengeId, otpCode);
-        setResetToken(result.resetToken);
-        setOtpCode('');
-        setView('reset');
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Verification failed.');
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function handleResetPassword(event: React.FormEvent) {
-    event.preventDefault();
-    if (!challengeContext?.serviceNumber) return;
-    setIsBusy(true);
-    try {
-      await resetPassword({
-        serviceNumber: challengeContext.serviceNumber,
-        resetToken,
-        password: resetForm.password,
-        confirmPassword: resetForm.confirmPassword,
-      });
-      toast.success('Password reset completed. Sign in with the new credential.');
-      setResetForm({ password: '', confirmPassword: '' });
-      setChallengeContext(null);
-      setResetToken('');
+      await requestPasswordReset(forgotServiceNumber);
+      toast.success('Password reset email sent. Check your inbox and sign in again when complete.');
+      setForgotServiceNumber('');
       setView('sign_in');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Password reset failed.');
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function handleBootstrapPasswordUpdate(event: React.FormEvent) {
-    event.preventDefault();
-    if (!pendingBootstrapUser) return;
-    if (bootstrapForm.password !== bootstrapForm.confirmPassword) {
-      toast.error('Password confirmation does not match.');
-      return;
-    }
-    setIsBusy(true);
-    try {
-      await updatePasswordAfterBootstrap(bootstrapForm.password);
-      toast.success('Password updated. Your platform owner session is now active.');
-      onAuthenticated({
-        ...pendingBootstrapUser,
-        mustChangePassword: false,
-        mfaEnrolled: true,
-      });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Password update failed.');
+      toast.error(error instanceof Error ? error.message : 'Could not start password reset.');
     } finally {
       setIsBusy(false);
     }
@@ -217,12 +97,12 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
             <p className="mt-6 text-xs uppercase tracking-[0.35em] text-sky-300/80">DDSE</p>
             <h1 className="mt-2 text-3xl font-black text-white">Secure Personnel Access</h1>
             <p className="mt-4 text-sm leading-7 text-slate-300">
-              Loading, sign in, registration, forgot password, OTP verification, and reset password are restored as real backend-driven flows backed by Convex and protected by audit and approval controls.
+              Loading, sign in, registration, forgot password, and password reset are powered by Supabase auth for secure access and session management.
             </p>
             <div className="mt-8 space-y-3 text-sm text-slate-300">
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Registration does not auto-grant privileged access. Sensitive roles remain pending approval.</div>
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">OTP challenges are backend-issued and require a configured delivery channel.</div>
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Operational data, inspection workflows, and audit history are now backed by Convex.</div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Registration is captured in Supabase and requires an administrator to approve privileged access.</div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Password reset uses Supabase email workflows.</div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Inspection and operational data are being migrated from Convex to Supabase.</div>
             </div>
           </aside>
 
@@ -286,67 +166,6 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
               </form>
             )}
 
-            {view === 'otp' && challengeContext && (
-              <form className="space-y-5" onSubmit={handleOtpVerification}>
-                <button className="inline-flex items-center gap-2 text-sm text-sky-300" onClick={() => setView(challengeContext.purpose === 'registration' ? 'register' : challengeContext.purpose === 'sign_in' ? 'sign_in' : 'forgot')} type="button">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </button>
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
-                  <div className="flex items-center gap-3">
-                    <MessageSquareCode className="h-5 w-5 text-sky-300" />
-                    <div>
-                      <p className="text-sm font-semibold text-white">Verification Required</p>
-                      <p className="text-xs text-slate-400">Code dispatched to {challengeContext.destinationMasked}</p>
-                    </div>
-                  </div>
-                </div>
-                <Field label="One-Time Passcode">
-                  <SimpleInput value={otpCode} onChange={setOtpCode} />
-                </Field>
-                <button
-                  className="text-sm text-sky-300 disabled:text-slate-600"
-                  disabled={resendCooldown > 0}
-                  onClick={() => {
-                    resendChallenge(challengeContext.challengeId)
-                      .then((result) => {
-                        setChallengeContext((current) => current ? { ...current, destinationMasked: result.destinationMasked } : current);
-                        setResendCooldown(60);
-                        toast.success('A new verification code has been sent.');
-                      })
-                      .catch((error: Error) => toast.error(error.message));
-                  }}
-                  type="button"
-                >
-                  {resendCooldown > 0 ? `Resend available in ${resendCooldown}s` : 'Resend code'}
-                </button>
-                <PrimaryButton busy={isBusy}>Verify</PrimaryButton>
-              </form>
-            )}
-
-            {view === 'reset' && (
-              <form className="space-y-5" onSubmit={handleResetPassword}>
-                <Field label="New Password"><SimpleInput type="password" value={resetForm.password} onChange={(value) => setResetForm((current) => ({ ...current, password: value }))} /></Field>
-                <Field label="Confirm Password"><SimpleInput type="password" value={resetForm.confirmPassword} onChange={(value) => setResetForm((current) => ({ ...current, confirmPassword: value }))} /></Field>
-                <PrimaryButton busy={isBusy}>Reset Password</PrimaryButton>
-              </form>
-            )}
-            {view === 'bootstrap_reset' && (
-              <form className="space-y-5" onSubmit={handleBootstrapPasswordUpdate}>
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
-                  <div className="flex items-center gap-3">
-                    <LockKeyhole className="h-5 w-5 text-sky-300" />
-                    <div>
-                      <p className="text-sm font-semibold text-white">Platform Owner First Login</p>
-                      <p className="text-xs text-slate-400">Set a new password and finalize your first login. MFA was verified during sign-in.</p>
-                    </div>
-                  </div>
-                </div>
-                <Field label="New Password"><SimpleInput type="password" value={bootstrapForm.password} onChange={(value) => setBootstrapForm((current) => ({ ...current, password: value }))} /></Field>
-                <Field label="Confirm Password"><SimpleInput type="password" value={bootstrapForm.confirmPassword} onChange={(value) => setBootstrapForm((current) => ({ ...current, confirmPassword: value }))} /></Field>
-                <PrimaryButton busy={isBusy}>Complete First Login</PrimaryButton>
-              </form>
-            )}
           </section>
         </div>
       </div>

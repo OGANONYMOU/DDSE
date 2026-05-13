@@ -9,10 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "legacy:server": "node server/index.js",
-    "test:legacy": "node --test server/**/*.test.js",
-    "convex:dev": "convex dev",
-    "convex:deploy": "convex deploy",
-    "bootstrap:platform": "node scripts/bootstrap-platform.js"
+    "test:legacy": "node --test server/**/*.test.js"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -43,6 +40,7 @@
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@supabase/supabase-js": "^2.105.4",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
