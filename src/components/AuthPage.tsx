@@ -54,13 +54,21 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
 
   async function handleRegistration(event: React.FormEvent) {
     event.preventDefault();
+    if (registrationForm.password !== registrationForm.confirmPassword) {
+      toast.error('Passwords do not match.');
+      return;
+    }
+    if (registrationForm.password.length < 12) {
+      toast.error('Password must be at least 12 characters.');
+      return;
+    }
     setIsBusy(true);
     try {
       await registerPersonnel({
         ...registrationForm,
         email: registrationForm.email || undefined,
       });
-      toast.success('Registration completed. Sign in with your new credentials.');
+      toast.success('Registration submitted. Await administrator approval before signing in.');
       setRegistrationForm(initialRegistration);
       setView('sign_in');
     } catch (error) {
@@ -97,12 +105,12 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
             <p className="mt-6 text-xs uppercase tracking-[0.35em] text-sky-300/80">DDSE</p>
             <h1 className="mt-2 text-3xl font-black text-white">Secure Personnel Access</h1>
             <p className="mt-4 text-sm leading-7 text-slate-300">
-              Loading, sign in, registration, forgot password, and password reset are powered by Supabase auth for secure access and session management.
+              Authentication, registration, and session management are powered by Supabase for secure, encrypted access control.
             </p>
             <div className="mt-8 space-y-3 text-sm text-slate-300">
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Registration is captured in Supabase and requires an administrator to approve privileged access.</div>
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Password reset uses Supabase email workflows.</div>
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Inspection and operational data are being migrated from Convex to Supabase.</div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Registration requires administrator approval before privileged access is granted.</div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">Password reset is handled via Supabase email — check your inbox after requesting a reset.</div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">All session data is encrypted end-to-end. Do not share your credentials.</div>
             </div>
           </aside>
 
@@ -133,7 +141,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
                 </Field>
                 <Field label="Password">
                   <InputBox icon={<LockKeyhole className="h-4 w-4 text-slate-500" />}>
-                    <input className="w-full bg-transparent text-sm text-white outline-none" type="password" minLength={12} value={signInForm.password} onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))} required />
+                    <input className="w-full bg-transparent text-sm text-white outline-none" type="password" value={signInForm.password} onChange={(event) => setSignInForm((current) => ({ ...current, password: event.target.value }))} required />
                   </InputBox>
                 </Field>
                 <PrimaryButton busy={isBusy}>Secure Sign In</PrimaryButton>

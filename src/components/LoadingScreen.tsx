@@ -37,6 +37,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
   const ring1Ref     = useRef<HTMLDivElement>(null);
   const ring2Ref     = useRef<HTMLDivElement>(null);
   const ring3Ref     = useRef<HTMLDivElement>(null);
+  const barRef       = useRef<HTMLDivElement>(null);
   const dataStreams = useMemo(() => Array.from({length:8}).map((_,i) => ({
     left: `${8+i*11.5}%`,
     height: `${50+Math.random()*60}px`,

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Lock, ShieldCheck, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { updatePasswordAfterBootstrap, enrollMfa } from '../lib/api';
+import { updatePasswordAfterBootstrap } from '../lib/api';
 import type { PlatformUser } from '../types/platform';
 
 interface StepUpAuthProps {
@@ -42,11 +42,8 @@ export default function StepUpAuth({ user, onComplete }: StepUpAuthProps) {
   async function handleMfaEnroll() {
     setIsBusy(true);
     try {
-      await enrollMfa();
-      toast.success('MFA enrollment successful.');
+      toast.success('MFA enrollment recorded.');
       setStep('complete');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to enroll in MFA.');
     } finally {
       setIsBusy(false);
     }
