@@ -26,16 +26,18 @@ export function toPlatformUser(user: User | null): PlatformUser | null {
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
 
   return {
-    id: user.id,
-    fullName: String(meta.fullName ?? meta.full_name ?? ''),
-    serviceNumber: String(meta.serviceNumber ?? user.email?.split('@')[0] ?? ''),
-    roleCode: String(meta.roleCode ?? 'base_soldier'),
-    directorateCode: String(meta.directorateCode ?? meta.directorate ?? ''),
-    status: String(meta.status ?? 'active'),
-    mfaRequired: Boolean(meta.mfaRequired ?? false),
-    mfaEnrolled: Boolean(meta.mfaEnrolled ?? false),
+    id:                 user.id,
+    fullName:           String(meta.fullName          ?? meta.full_name ?? ''),
+    email:              String(meta.email             ?? ''),
+    serviceNumber:      String(meta.serviceNumber     ?? user.email?.split('@')[0] ?? ''),
+    rankCode:           String(meta.rankCode          ?? ''),
+    roleCode:           String(meta.roleCode          ?? 'staff'),
+    directorateCode:    String(meta.directorateCode   ?? meta.directorate ?? ''),
+    status:             String(meta.status            ?? 'active'),
+    mfaRequired:        Boolean(meta.mfaRequired      ?? false),
+    mfaEnrolled:        Boolean(meta.mfaEnrolled      ?? false),
     mustChangePassword: Boolean(meta.mustChangePassword ?? false),
-    isPlatformOwner: Boolean(meta.isPlatformOwner ?? false),
+    isPlatformOwner:    Boolean(meta.isPlatformOwner  ?? false),
   };
 }
 

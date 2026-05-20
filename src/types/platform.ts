@@ -1,12 +1,14 @@
 export interface PlatformUser {
-  id: string;
-  fullName: string;
-  serviceNumber: string;
-  roleCode: string;
-  directorateCode: string;
-  status: string;
-  mfaRequired: boolean;
-  mfaEnrolled?: boolean;
+  id:               string;
+  fullName:         string;
+  email?:           string;  // real contact email (not the internal auth alias)
+  serviceNumber:    string;
+  rankCode?:        string;
+  roleCode:         string;  // 'director' | 'admin' | 'staff'
+  directorateCode:  string;
+  status:           string;  // 'active' | 'pending' | 'suspended'
+  mfaRequired:      boolean;
+  mfaEnrolled?:     boolean;
   mustChangePassword?: boolean;
   isPlatformOwner?: boolean;
 }
