@@ -1,16 +1,18 @@
 export interface PlatformUser {
-  id:               string;
-  fullName:         string;
-  email?:           string;  // real contact email (not the internal auth alias)
-  serviceNumber:    string;
-  rankCode?:        string;
-  roleCode:         string;  // 'director' | 'admin' | 'staff'
-  directorateCode:  string;
-  status:           string;  // 'active' | 'pending' | 'suspended'
-  mfaRequired:      boolean;
-  mfaEnrolled?:     boolean;
+  id:                 string;
+  fullName:           string;
+  email?:             string;  // real contact email (not the internal auth alias)
+  serviceNumber:      string;
+  rankCode?:          string;
+  roleCode:           string;  // see RoleCode in src/lib/rbac.ts
+  clearanceLevel?:    number;  // 1–6, derived from role
+  commandJurisdiction?: string; // unit/base code for commanders
+  directorateCode:    string;
+  status:             string;  // 'active' | 'pending' | 'suspended'
+  mfaRequired:        boolean;
+  mfaEnrolled?:       boolean;
   mustChangePassword?: boolean;
-  isPlatformOwner?: boolean;
+  isPlatformOwner?:   boolean;
 }
 
 export interface SessionPayload {

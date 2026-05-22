@@ -1,6 +1,9 @@
 -- =============================================================================
--- DDSE Personnel System — Full RBAC SQL Schema
--- Supabase Auth backend · Role hierarchy: director > admin > staff
+-- DDSE Personnel System — Full RBAC SQL Schema  (v3 — 11 roles, 6 clearance levels)
+-- Supabase Auth backend
+-- Role hierarchy: super_admin > director > commander > admin >
+--                 {armoury_officer, auditor} > {engineering_officer, safety_officer, logistics_officer} >
+--                 {inspection_officer, staff}
 -- Run in Supabase SQL Editor (as postgres / service_role)
 -- =============================================================================
 
@@ -33,16 +36,47 @@ create table if not exists public.personnel (
                                    'project_monitoring'
                                  )),
   role             text        not null default 'staff'
-                                 check (role in ('director','admin','staff')),
+                                 check (role in (
+                                   'super_admin',
+                                   'director',
+                                   'commander',
+                                   'admin',
+                                   'engineering_officer',
+                                   'safety_officer',
+                                   'armoury_officer',
+                                   'logistics_officer',
+                                   'inspection_officer',
+                                   'staff',
+                                   'auditor'
+                                 )),
+  clearance_level  integer     generated always as (
+                                 case role
+                                   when 'super_admin'         then 6
+                                   when 'director'            then 6
+                                   when 'commander'           then 5
+                                   when 'admin'               then 4
+                                   when 'armoury_officer'     then 4
+                                   when 'auditor'             then 4
+                                   when 'engineering_officer' then 3
+                                   when 'safety_officer'      then 3
+                                   when 'logistics_officer'   then 3
+                                   when 'inspection_officer'  then 2
+                                   when 'staff'               then 2
+                                   else                            1
+                                 end
+                               ) stored,
+  command_jurisdiction text,                             -- unit/base code for commanders
   status           text        not null default 'pending'
                                  check (status in ('pending','active','suspended')),
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
 
-comment on column public.personnel.email          is 'Real contact email — not the internal Supabase Auth alias.';
-comment on column public.personnel.service_number is 'Unique military identifier used as the login credential.';
-comment on column public.personnel.role           is 'RBAC role. Director is never assigned via public registration.';
+comment on column public.personnel.email                is 'Real contact email — not the internal Supabase Auth alias.';
+comment on column public.personnel.service_number       is 'Unique military identifier used as the login credential.';
+comment on column public.personnel.role                 is 'RBAC role. super_admin/director/commander are never self-registered.';
+comment on column public.personnel.clearance_level      is 'Security clearance 1–6, auto-derived from role.';
+comment on column public.personnel.command_jurisdiction is 'Unit/base code — only relevant for commanders.';
 
 -- Auto-update updated_at
 create or replace function public.set_updated_at()
@@ -60,7 +94,12 @@ create trigger trg_personnel_updated_at
 create table if not exists public.registration_approvals (
   id                   uuid        primary key default gen_random_uuid(),
   user_id              uuid        not null references auth.users (id) on delete cascade,
-  requested_role_code  text        not null default 'staff',
+  requested_role_code  text        not null default 'staff'
+                                   check (requested_role_code in (
+                                     'super_admin','director','commander','admin',
+                                     'engineering_officer','safety_officer','armoury_officer',
+                                     'logistics_officer','inspection_officer','staff','auditor'
+                                   )),
   directorate_code     text        not null,
   decision             text        check (decision in ('approved','rejected')),
   notes                text,
@@ -74,7 +113,15 @@ create table if not exists public.registration_approvals (
 -- ---------------------------------------------------------------------------
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_role text;
 begin
+  -- Sanitise incoming role — privileged roles cannot be self-assigned
+  v_role := coalesce(new.raw_user_meta_data->>'roleCode', 'staff');
+  if v_role in ('super_admin','director','commander') then
+    v_role := 'staff';
+  end if;
+
   insert into public.personnel (
     id, full_name, email, service_number,
     phone_number, rank_code, directorate_code,
@@ -87,7 +134,7 @@ begin
     coalesce(new.raw_user_meta_data->>'phoneNumber',     ''),
     coalesce(new.raw_user_meta_data->>'rankCode',        'pte'),
     coalesce(new.raw_user_meta_data->>'directorateCode', 'standard_evaluation'),
-    'staff',    -- always staff on self-registration; director/admin set manually
+    v_role,   -- validated above; super_admin/director/commander always fall back to staff
     'pending'
   )
   on conflict (id) do nothing;
@@ -124,10 +171,10 @@ create policy "personnel_select_own"
   on public.personnel for select
   using (id = auth.uid());
 
--- Admins + directors can read all rows
+-- Elevated roles can read all rows
 create policy "personnel_select_elevated"
   on public.personnel for select
-  using (public.my_role() in ('admin','director'));
+  using (public.my_role() in ('super_admin','director','commander','admin','auditor'));
 
 -- Users can insert their own row (trigger does this; policy enforces it)
 create policy "personnel_insert_own"
@@ -144,22 +191,22 @@ create policy "personnel_update_own_safe"
     and status = (select status from public.personnel where id = auth.uid())
   );
 
--- Only director can update any row (including role promotion)
+-- super_admin and director can update any row (including role promotion)
 create policy "personnel_update_director"
   on public.personnel for update
-  using (public.my_role() = 'director');
+  using (public.my_role() in ('super_admin','director'));
 
--- Only director can delete personnel records
+-- super_admin and director can delete personnel records
 create policy "personnel_delete_director"
   on public.personnel for delete
-  using (public.my_role() = 'director');
+  using (public.my_role() in ('super_admin','director'));
 
 -- ── Approval queue policies ──────────────────────────────────────────────────
 
--- Directors and admins see the full queue
+-- Elevated roles see the full approval queue
 create policy "approvals_select_elevated"
   on public.registration_approvals for select
-  using (public.my_role() in ('admin','director'));
+  using (public.my_role() in ('super_admin','director','commander','admin'));
 
 -- Users can see their own approval entry
 create policy "approvals_select_own"
@@ -171,10 +218,10 @@ create policy "approvals_insert_own"
   on public.registration_approvals for insert
   with check (user_id = auth.uid());
 
--- Only director/admin can update (approve / reject)
+-- super_admin, director, admin can approve/reject registrations
 create policy "approvals_update_elevated"
   on public.registration_approvals for update
-  using (public.my_role() in ('admin','director'));
+  using (public.my_role() in ('super_admin','director','admin'));
 
 -- ---------------------------------------------------------------------------
 -- 5.  Director seeding
@@ -236,16 +283,17 @@ returns void language plpgsql security definer as $$
 declare
   v_user_id uuid;
   v_dir     text;
+  v_role    text;
 begin
-  if public.my_role() not in ('admin','director') then
-    raise exception 'Insufficient privileges';
+  if public.my_role() not in ('super_admin','director','admin') then
+    raise exception 'Insufficient privileges to approve registrations';
   end if;
   if p_decision not in ('approved','rejected') then
     raise exception 'Invalid decision value';
   end if;
 
-  select user_id, directorate_code
-    into v_user_id, v_dir
+  select user_id, directorate_code, requested_role_code
+    into v_user_id, v_dir, v_role
     from public.registration_approvals
    where id = p_approval_id and decision is null;
 
@@ -255,21 +303,25 @@ begin
 
   -- Record the decision
   update public.registration_approvals
-     set decision    = p_decision,
-         notes       = p_notes,
-         decided_by  = auth.uid(),
-         decided_at  = now()
+     set decision   = p_decision,
+         notes      = p_notes,
+         decided_by = auth.uid(),
+         decided_at = now()
    where id = p_approval_id;
 
-  -- Activate or leave suspended based on decision
+  -- Activate/suspend and assign approved role
   update public.personnel
-     set status = case p_decision when 'approved' then 'active' else 'suspended' end
+     set status = case p_decision when 'approved' then 'active' else 'suspended' end,
+         role   = case p_decision when 'approved' then coalesce(v_role, 'staff') else role end
    where id = v_user_id;
 
   -- Keep auth metadata in sync
   update auth.users
      set raw_user_meta_data = raw_user_meta_data ||
-         jsonb_build_object('status', case p_decision when 'approved' then 'active' else 'suspended' end)
+         jsonb_build_object(
+           'status',  case p_decision when 'approved' then 'active' else 'suspended' end,
+           'roleCode', case p_decision when 'approved' then coalesce(v_role, 'staff') else null end
+         )
    where id = v_user_id;
 end; $$;
 
@@ -282,11 +334,21 @@ create or replace function public.set_user_role(
 )
 returns void language plpgsql security definer as $$
 begin
-  if public.my_role() != 'director' then
-    raise exception 'Only directors may change roles';
+  if public.my_role() not in ('super_admin', 'director') then
+    raise exception 'Only super admins and directors may change roles';
   end if;
-  if p_new_role not in ('director','admin','staff') then
-    raise exception 'Invalid role value';
+
+  if p_new_role not in (
+    'super_admin','director','commander','admin',
+    'engineering_officer','safety_officer','armoury_officer',
+    'logistics_officer','inspection_officer','staff','auditor'
+  ) then
+    raise exception 'Invalid role value: %', p_new_role;
+  end if;
+
+  -- Directors cannot promote to super_admin
+  if p_new_role = 'super_admin' and public.my_role() != 'super_admin' then
+    raise exception 'Only super admins may promote to super admin';
   end if;
 
   update public.personnel
@@ -336,6 +398,7 @@ create unique index if not exists idx_personnel_email          on public.personn
 create unique index if not exists idx_personnel_service_number on public.personnel (service_number);
 create        index if not exists idx_personnel_role           on public.personnel (role);
 create        index if not exists idx_personnel_status         on public.personnel (status);
+create        index if not exists idx_personnel_clearance      on public.personnel (clearance_level);
 create        index if not exists idx_approvals_user_id        on public.registration_approvals (user_id);
 create        index if not exists idx_approvals_decision       on public.registration_approvals (decision);
 

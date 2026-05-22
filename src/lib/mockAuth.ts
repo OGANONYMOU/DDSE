@@ -1,13 +1,14 @@
 import type { PlatformUser } from '../types/platform';
+import { getClearanceLevel, getRoleConfig } from './rbac';
 
 export interface MockAccount {
-  user:        PlatformUser;
-  password:    string;
-  roleLabel:   string;
-  rankLabel:   string;
-  dirLabel:    string;
-  badgeColor:  string;  // tailwind bg class
-  badgeText:   string;  // tailwind text class
+  user:       PlatformUser;
+  password:   string;
+  roleLabel:  string;
+  rankLabel:  string;
+  dirLabel:   string;
+  badgeColor: string;
+  badgeText:  string;
 }
 
 const DIRECTORATES: Record<string, string> = {
@@ -18,134 +19,207 @@ const DIRECTORATES: Record<string, string> = {
 
 const RANKS: Record<string, string> = {
   gen:   'General',
-  mgen:  'Major General',
   ltgen: 'Lieutenant General',
+  mgen:  'Major General',
+  brig:  'Brigadier',
   col:   'Colonel',
   ltcol: 'Lieutenant Colonel',
   maj:   'Major',
   capt:  'Captain',
+  lt:    'Lieutenant',
   sgt:   'Sergeant',
+  cpl:   'Corporal',
+  pte:   'Private',
 };
 
+function makeMock(
+  id: string,
+  fullName: string,
+  email: string,
+  serviceNumber: string,
+  rankCode: string,
+  roleCode: string,
+  directorateCode: string,
+  password: string,
+  commandJurisdiction?: string,
+): MockAccount {
+  const cfg = getRoleConfig(roleCode);
+  return {
+    user: {
+      id,
+      fullName,
+      email,
+      serviceNumber,
+      rankCode,
+      roleCode,
+      clearanceLevel: getClearanceLevel(roleCode),
+      directorateCode,
+      commandJurisdiction,
+      status:          'active',
+      mfaRequired:     false,
+      isPlatformOwner: roleCode === 'super_admin',
+    },
+    password,
+    roleLabel:  cfg.label,
+    rankLabel:  RANKS[rankCode] ?? rankCode.toUpperCase(),
+    dirLabel:   DIRECTORATES[directorateCode] ?? directorateCode,
+    badgeColor: cfg.uiTheme.badgeColor,
+    badgeText:  cfg.uiTheme.badgeText,
+  };
+}
+
 export const MOCK_ACCOUNTS: MockAccount[] = [
-  // ── Director ──────────────────────────────────────────────────────────────
-  {
-    user: {
-      id:              'mock-director-001',
-      fullName:        'Maj Gen Ibrahim Musa',
-      email:           'ibrahim.musa@ddse.mil',
-      serviceNumber:   '10000001',
-      rankCode:        'mgen',
-      roleCode:        'director',
-      directorateCode: 'standard_evaluation',
-      status:          'active',
-      mfaRequired:     false,
-      isPlatformOwner: true,
-    },
-    password:   'Dir@2025#',
-    roleLabel:  'Director',
-    rankLabel:  RANKS['mgen'],
-    dirLabel:   DIRECTORATES['standard_evaluation'],
-    badgeColor: 'bg-violet-500/20',
-    badgeText:  'text-violet-300',
-  },
 
-  // ── Admin × 2 ─────────────────────────────────────────────────────────────
-  {
-    user: {
-      id:              'mock-admin-001',
-      fullName:        'Col Amaka Okonkwo',
-      email:           'amaka.okonkwo@ddse.mil',
-      serviceNumber:   '10000002',
-      rankCode:        'col',
-      roleCode:        'admin',
-      directorateCode: 'safety_manual',
-      status:          'active',
-      mfaRequired:     false,
-    },
-    password:   'Adm@2025#',
-    roleLabel:  'Admin',
-    rankLabel:  RANKS['col'],
-    dirLabel:   DIRECTORATES['safety_manual'],
-    badgeColor: 'bg-sky-500/20',
-    badgeText:  'text-sky-300',
-  },
-  {
-    user: {
-      id:              'mock-admin-002',
-      fullName:        'Lt Col Emeka Nwosu',
-      email:           'emeka.nwosu@ddse.mil',
-      serviceNumber:   '10000003',
-      rankCode:        'ltcol',
-      roleCode:        'admin',
-      directorateCode: 'project_monitoring',
-      status:          'active',
-      mfaRequired:     false,
-    },
-    password:   'Adm@2025#',
-    roleLabel:  'Admin',
-    rankLabel:  RANKS['ltcol'],
-    dirLabel:   DIRECTORATES['project_monitoring'],
-    badgeColor: 'bg-sky-500/20',
-    badgeText:  'text-sky-300',
-  },
+  // ── 1. SUPER ADMIN ─────────────────────────────────────────────────────────
+  makeMock(
+    'mock-superadmin-001',
+    'Gen Olusegun Adebayo',
+    'olusegun.adebayo@ddse.mil',
+    '10000000',
+    'gen',
+    'super_admin',
+    'standard_evaluation',
+    'SAdm@2025#',
+  ),
 
-  // ── Staff × 3 ─────────────────────────────────────────────────────────────
-  {
-    user: {
-      id:              'mock-staff-001',
-      fullName:        'Capt Fatima Aliyu',
-      email:           'fatima.aliyu@ddse.mil',
-      serviceNumber:   '10000004',
-      rankCode:        'capt',
-      roleCode:        'staff',
-      directorateCode: 'standard_evaluation',
-      status:          'active',
-      mfaRequired:     false,
-    },
-    password:   'Stf@2025#',
-    roleLabel:  'Staff',
-    rankLabel:  RANKS['capt'],
-    dirLabel:   DIRECTORATES['standard_evaluation'],
-    badgeColor: 'bg-emerald-500/20',
-    badgeText:  'text-emerald-300',
-  },
-  {
-    user: {
-      id:              'mock-staff-002',
-      fullName:        'Sgt Kelechi Eze',
-      email:           'kelechi.eze@ddse.mil',
-      serviceNumber:   '10000005',
-      rankCode:        'sgt',
-      roleCode:        'staff',
-      directorateCode: 'safety_manual',
-      status:          'active',
-      mfaRequired:     false,
-    },
-    password:   'Stf@2025#',
-    roleLabel:  'Staff',
-    rankLabel:  RANKS['sgt'],
-    dirLabel:   DIRECTORATES['safety_manual'],
-    badgeColor: 'bg-emerald-500/20',
-    badgeText:  'text-emerald-300',
-  },
-  {
-    user: {
-      id:              'mock-staff-003',
-      fullName:        'Maj Bola Adeyemi',
-      email:           'bola.adeyemi@ddse.mil',
-      serviceNumber:   '10000006',
-      rankCode:        'maj',
-      roleCode:        'staff',
-      directorateCode: 'project_monitoring',
-      status:          'active',
-      mfaRequired:     false,
-    },
-    password:   'Stf@2025#',
-    roleLabel:  'Staff',
-    rankLabel:  RANKS['maj'],
-    dirLabel:   DIRECTORATES['project_monitoring'],
-    badgeColor: 'bg-emerald-500/20',
-    badgeText:  'text-emerald-300',
-  },
+  // ── 2. DIRECTOR ────────────────────────────────────────────────────────────
+  makeMock(
+    'mock-director-001',
+    'Maj Gen Ibrahim Musa',
+    'ibrahim.musa@ddse.mil',
+    '10000001',
+    'mgen',
+    'director',
+    'standard_evaluation',
+    'Dir@2025#',
+  ),
+
+  // ── 3. COMMANDER ───────────────────────────────────────────────────────────
+  makeMock(
+    'mock-commander-001',
+    'Brig Chukwuemeka Obiora',
+    'emeka.obiora@ddse.mil',
+    '10000002',
+    'brig',
+    'commander',
+    'standard_evaluation',
+    'Cmd@2025#',
+    'UNIT-7-ABUJA',
+  ),
+
+  // ── 4. ADMIN ───────────────────────────────────────────────────────────────
+  makeMock(
+    'mock-admin-001',
+    'Col Amaka Okonkwo',
+    'amaka.okonkwo@ddse.mil',
+    '10000003',
+    'col',
+    'admin',
+    'safety_manual',
+    'Adm@2025#',
+  ),
+  makeMock(
+    'mock-admin-002',
+    'Lt Col Emeka Nwosu',
+    'emeka.nwosu@ddse.mil',
+    '10000004',
+    'ltcol',
+    'admin',
+    'project_monitoring',
+    'Adm@2025#',
+  ),
+
+  // ── 5. ENGINEERING OFFICER ─────────────────────────────────────────────────
+  makeMock(
+    'mock-eng-001',
+    'Maj Damilola Adeyinka',
+    'damilola.adeyinka@ddse.mil',
+    '10000005',
+    'maj',
+    'engineering_officer',
+    'project_monitoring',
+    'Eng@2025#',
+  ),
+
+  // ── 6. SAFETY / HAZARD OFFICER ─────────────────────────────────────────────
+  makeMock(
+    'mock-safety-001',
+    'Capt Ngozi Eze-Williams',
+    'ngozi.ezewilliams@ddse.mil',
+    '10000006',
+    'capt',
+    'safety_officer',
+    'safety_manual',
+    'Saf@2025#',
+  ),
+
+  // ── 7. ARMOURY OFFICER ─────────────────────────────────────────────────────
+  makeMock(
+    'mock-armoury-001',
+    'Lt Bello Abdullahi',
+    'bello.abdullahi@ddse.mil',
+    '10000007',
+    'lt',
+    'armoury_officer',
+    'standard_evaluation',
+    'Arm@2025#',
+  ),
+
+  // ── 8. LOGISTICS OFFICER ───────────────────────────────────────────────────
+  makeMock(
+    'mock-logistics-001',
+    'Maj Tunde Fashola',
+    'tunde.fashola@ddse.mil',
+    '10000008',
+    'maj',
+    'logistics_officer',
+    'project_monitoring',
+    'Log@2025#',
+  ),
+
+  // ── 9. INSPECTION OFFICER ──────────────────────────────────────────────────
+  makeMock(
+    'mock-insp-001',
+    'Capt Fatima Aliyu',
+    'fatima.aliyu@ddse.mil',
+    '10000009',
+    'capt',
+    'inspection_officer',
+    'standard_evaluation',
+    'Ins@2025#',
+  ),
+
+  // ── 10. STAFF ─────────────────────────────────────────────────────────────
+  makeMock(
+    'mock-staff-001',
+    'Sgt Kelechi Eze',
+    'kelechi.eze@ddse.mil',
+    '10000010',
+    'sgt',
+    'staff',
+    'safety_manual',
+    'Stf@2025#',
+  ),
+  makeMock(
+    'mock-staff-002',
+    'Maj Bola Adeyemi',
+    'bola.adeyemi@ddse.mil',
+    '10000011',
+    'maj',
+    'staff',
+    'project_monitoring',
+    'Stf@2025#',
+  ),
+
+  // ── 11. AUDITOR ───────────────────────────────────────────────────────────
+  makeMock(
+    'mock-auditor-001',
+    'Col Yetunde Bankole',
+    'yetunde.bankole@ddse.mil',
+    '10000012',
+    'col',
+    'auditor',
+    'standard_evaluation',
+    'Aud@2025#',
+  ),
 ];

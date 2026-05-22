@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Shield, FileCheck2, Lock, HardHat, AlertTriangle, UserCheck, TrendingUp, 
-  LogOut, Radio, Layers3, Siren, Radar, Cpu, Clock, Key, ShieldCheck, 
+import {
+  Shield, FileCheck2, Lock, HardHat, AlertTriangle, UserCheck, TrendingUp,
+  LogOut, Radio, Layers3, Siren, Radar, Cpu, Clock, Key, ShieldCheck,
   Fingerprint, Menu, X, Terminal, ChevronRight, Activity, Globe
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,6 +15,14 @@ import {
   getPendingApprovals,
   listInspections,
 } from '../lib/api';
+import {
+  canAccessDeck,
+  getClearanceLabel,
+  getClearanceLevel,
+  getRoleConfig,
+  hasPermission,
+  type DeckId,
+} from '../lib/rbac';
 import type { DashboardSummary, InspectionDetail, InspectionSummary, ModuleDefinition, PlatformUser } from '../types/platform';
 
 // Subcomponents
@@ -31,19 +39,33 @@ interface CommandCenterProps {
   onLogout: () => Promise<void> | void;
 }
 
-const DECKS = [
-  { id: 'hq', label: 'Defense HQ', icon: Shield, description: 'Strategic Operations Room', classification: 'LEVEL_5 SECURE' },
-  { id: 'checklists', label: 'Tactical Audits', icon: FileCheck2, description: 'Interactive Assessments', classification: 'LEVEL_4 DECLASSIFIED' },
-  { id: 'armoury', label: 'Armoury Vault', icon: Lock, description: 'Classified Weapons System', classification: 'LEVEL_4 RESTRICTED' },
-  { id: 'engineering', label: 'Engineering Command', icon: HardHat, description: 'Strategic Infrastructure', classification: 'LEVEL_4 STRATEGIC' },
-  { id: 'hazard', label: 'Hazard Emergency', icon: AlertTriangle, description: 'Industrial Threat Sweeps', classification: 'LEVEL_4 HIGH_RISK' },
-  { id: 'personnel', label: 'Personnel Dossiers', icon: UserCheck, description: 'Classified Officer Profiles', classification: 'LEVEL_5 RESTRICTED' },
-  { id: 'analytics', label: 'Intelligence Analytics', icon: TrendingUp, description: 'Readiness Forecasting', classification: 'LEVEL_5 SECRET' },
+const ALL_DECKS: { id: DeckId; label: string; icon: React.ElementType; description: string; classification: string }[] = [
+  { id: 'hq',          label: 'Defense HQ',            icon: Shield,        description: 'Strategic Operations Room',  classification: 'LEVEL_6 TOP_SECRET' },
+  { id: 'checklists',  label: 'Tactical Audits',        icon: FileCheck2,    description: 'Interactive Assessments',    classification: 'LEVEL_4 DECLASSIFIED' },
+  { id: 'armoury',     label: 'Armoury Vault',          icon: Lock,          description: 'Classified Weapons System',  classification: 'LEVEL_4 RESTRICTED' },
+  { id: 'engineering', label: 'Engineering Command',    icon: HardHat,       description: 'Strategic Infrastructure',   classification: 'LEVEL_3 STRATEGIC' },
+  { id: 'hazard',      label: 'Hazard Emergency',       icon: AlertTriangle, description: 'Industrial Threat Sweeps',   classification: 'LEVEL_3 HIGH_RISK' },
+  { id: 'personnel',   label: 'Personnel Dossiers',     icon: UserCheck,     description: 'Classified Officer Profiles',classification: 'LEVEL_5 RESTRICTED' },
+  { id: 'analytics',   label: 'Intelligence Analytics', icon: TrendingUp,    description: 'Readiness Forecasting',      classification: 'LEVEL_5 SECRET' },
 ];
 
 export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
-  // Navigation deck state
-  const [currentDeck, setCurrentDeck] = useState<string>('hq');
+  // Role-filtered deck list — only show decks the user's role can access
+  const DECKS = useMemo(
+    () => ALL_DECKS.filter((d) => canAccessDeck(user.roleCode, d.id)),
+    [user.roleCode],
+  );
+
+  const roleConfig = useMemo(() => getRoleConfig(user.roleCode), [user.roleCode]);
+  const clearanceLevel = useMemo(() => getClearanceLevel(user.roleCode), [user.roleCode]);
+  const clearanceLabel = useMemo(() => getClearanceLabel(clearanceLevel), [clearanceLevel]);
+  const canApproveRegistrations = useMemo(
+    () => hasPermission(user.roleCode, 'approval.register'),
+    [user.roleCode],
+  );
+
+  // Navigation deck state — default to first accessible deck
+  const [currentDeck, setCurrentDeck] = useState<string>(() => DECKS[0]?.id ?? 'checklists');
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [authQueueOpen, setAuthQueueOpen] = useState<boolean>(false);
 
@@ -373,15 +395,32 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
                 DDSE COMMAND DIRECTORY
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping"></span>
               </h1>
-              <p className="text-[10px] font-mono text-slate-400">
-                {user.fullName} · ID: {user.serviceNumber} · clearance: {user.roleCode.toUpperCase().replaceAll('_', ' ')}
+              <p className="text-[10px] font-mono text-slate-400 flex items-center gap-2 flex-wrap">
+                <span>{user.fullName}</span>
+                <span className="text-slate-600">·</span>
+                <span>ID: {user.serviceNumber}</span>
+                <span className="text-slate-600">·</span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border ${roleConfig.uiTheme.badgeColor} ${roleConfig.uiTheme.badgeText} border-current/20`}>
+                  {roleConfig.label}
+                </span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border ${
+                  clearanceLevel >= 5
+                    ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                    : clearanceLevel >= 4
+                    ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
+                    : clearanceLevel >= 3
+                    ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                    : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                }`}>
+                  L{clearanceLevel} · {clearanceLabel}
+                </span>
               </p>
             </div>
           </div>
 
           {/* Secure authorization alert indicators */}
           <div className="flex items-center gap-4">
-            {pendingApprovals.length > 0 && (
+            {canApproveRegistrations && pendingApprovals.length > 0 && (
               <button
                 onClick={() => setAuthQueueOpen(true)}
                 className="hidden sm:flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] font-mono font-black text-amber-300 animate-pulse hover:border-amber-400 transition"
@@ -476,7 +515,7 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
             </nav>
           </div>
 
-          {/* Diagnostic Widget */}
+          {/* Diagnostic / Clearance Widget */}
           <div className="rounded-3xl border border-slate-900 bg-slate-950/40 p-5 space-y-3 font-mono text-[10px] text-slate-500">
             <div className="flex justify-between items-center border-b border-slate-900/60 pb-2">
               <span className="font-bold text-slate-400 flex items-center gap-1.5">
@@ -488,6 +527,11 @@ export default function CommandCenter({ user, onLogout }: CommandCenterProps) {
             <p>COMMS INTEGRITY: 99.8% SIGN</p>
             <p>CRYPTO LINK: SHA-256 AES</p>
             <p>POSTURE RATIO: DEFCON NOMINAL</p>
+            <div className="border-t border-slate-900/60 pt-2 space-y-1">
+              <p className="text-slate-500 uppercase">CLEARANCE: <span className={`font-bold ${roleConfig.uiTheme.badgeText}`}>L{clearanceLevel} {clearanceLabel}</span></p>
+              <p className="text-slate-500 uppercase">ROLE: <span className={`font-bold ${roleConfig.uiTheme.badgeText}`}>{roleConfig.label}</span></p>
+              <p className="text-slate-500 uppercase">DECKS: <span className="font-bold text-slate-300">{DECKS.length}/{ALL_DECKS.length}</span></p>
+            </div>
           </div>
         </aside>
 
