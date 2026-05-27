@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { RouterProvider } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import AuthPage from './components/AuthPage';
-import CommandCenter from './components/CommandCenter';
 import LoadingScreen from './components/LoadingScreen';
 import StepUpAuth from './components/StepUpAuth';
 import { bootstrapPlatform, restoreSession, signOut } from './lib/api';
+import { createAppRouter } from './router';
 import { supabaseMisconfigured } from './lib/supabase';
 import type { PlatformUser } from './types/platform';
 
@@ -25,6 +26,11 @@ VITE_SUPABASE_ANON_KEY=<your-anon-key>`}
       </div>
     </div>
   );
+}
+
+function AppRouter({ user, onLogout }: { user: PlatformUser; onLogout: () => Promise<void> }) {
+  const router = useMemo(() => createAppRouter({ user, onLogout }), [user, onLogout]);
+  return <RouterProvider router={router} />;
 }
 
 function App() {
@@ -111,14 +117,7 @@ function App() {
         />
       )}
       {status === 'ready' && user && (
-        <CommandCenter
-          user={user}
-          onLogout={async () => {
-            await signOut();
-            setUser(null);
-            setStatus('auth');
-          }}
-        />
+        <AppRouter user={user} onLogout={async () => { await signOut(); setUser(null); setStatus('auth'); }} />
       )}
     </div>
   );
