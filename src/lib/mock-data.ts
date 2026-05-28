@@ -658,3 +658,516 @@ export const MOCK_INSPECTION_TEMPLATES: Record<string, MockInspectionTemplate> =
     ],
   },
 };
+
+// ─── Safety & Hazard Assessment System ────────────────────────────────────────
+
+export type HazardCategory =
+  | 'Electrical Safety'
+  | 'Ventilation'
+  | 'Hazardous Substances'
+  | 'Fueling Operations'
+  | 'Noise Control'
+  | 'Material Handling'
+  | 'Fire Protection'
+  | 'PPE Compliance'
+  | 'Walkways & Access'
+  | 'Equipment Safety';
+
+export type SafetyRiskLevel  = 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+export type ComplianceStatus = 'compliant' | 'partial' | 'non_compliant' | 'under_review';
+export type SafetyWorkflow   = 'open' | 'investigating' | 'action_required' | 'escalated' | 'resolved' | 'closed';
+
+export interface MockHazardCheckItem {
+  id:        string;
+  prompt:    string;
+  compliant: boolean | null;
+  notes:     string;
+}
+
+export interface MockCorrectiveAction {
+  id:             string;
+  recommendation: string;
+  department:     string;
+  urgency:        'IMMEDIATE' | 'HIGH' | 'MEDIUM' | 'LOW';
+  dueDate:        string;
+  status:         'pending' | 'in_progress' | 'resolved';
+}
+
+export interface MockHazardAssessment {
+  id:                string;
+  projectId:         string;
+  projectName:       string;
+  projectCode:       string;
+  directorateCode:   string;
+  category:          HazardCategory;
+  hazardTitle:       string;
+  riskLevel:         SafetyRiskLevel;
+  complianceStatus:  ComplianceStatus;
+  workflowStatus:    SafetyWorkflow;
+  inspector:         string;
+  observations:      string;
+  checkItems:        MockHazardCheckItem[];
+  correctiveActions: MockCorrectiveAction[];
+  createdAt:         string;
+  updatedAt:         string;
+}
+
+export const MOCK_HAZARD_ASSESSMENTS: MockHazardAssessment[] = [
+  {
+    id: 'HAZ-001', projectId: 'PRJ-2025-001', projectName: 'Barracks Renovation — Block C',
+    projectCode: 'DESE/RHB/2025/001', directorateCode: 'DESE',
+    category: 'Electrical Safety', hazardTitle: 'Exposed Live Wiring — Block C Ground Floor',
+    riskLevel: 'HIGH', complianceStatus: 'non_compliant', workflowStatus: 'action_required',
+    inspector: 'Maj. O.B. Adeyemi', createdAt: '2025-09-12', updatedAt: '2025-10-05',
+    observations: 'Exposed wiring observed at three junction points on the ground floor corridor. Conduit capping missing on service riser between rooms 104 and 106. No earthing bond visible on distribution board DB-02.',
+    checkItems: [
+      { id: 'ci-001-1', prompt: 'All live wiring concealed within approved conduits or trunking',                 compliant: false, notes: 'Exposed runs found in corridor 1A' },
+      { id: 'ci-001-2', prompt: 'Distribution boards properly labelled and circuit breakers correctly rated',    compliant: true,  notes: '' },
+      { id: 'ci-001-3', prompt: 'Earthing and bonding system tested and certificate available',                  compliant: false, notes: 'Certificate not produced on site' },
+      { id: 'ci-001-4', prompt: 'No unauthorized electrical modifications made by site workers',                 compliant: true,  notes: '' },
+      { id: 'ci-001-5', prompt: 'Temporary power cables properly routed and protected from damage',              compliant: false, notes: 'Cable draped across walkway near stairwell' },
+    ],
+    correctiveActions: [
+      { id: 'ca-001-1', recommendation: 'Enclose all exposed wiring in GI conduit and seal all junction boxes', department: 'Electrical Sub-Contractor', urgency: 'IMMEDIATE', dueDate: '2025-10-15', status: 'in_progress' },
+      { id: 'ca-001-2', recommendation: 'Commission independent electrical test and obtain ICAN-certified earthing certificate', department: 'Project Consultant', urgency: 'HIGH', dueDate: '2025-10-30', status: 'pending' },
+    ],
+  },
+  {
+    id: 'HAZ-002', projectId: 'PRJ-2025-001', projectName: 'Barracks Renovation — Block C',
+    projectCode: 'DESE/RHB/2025/001', directorateCode: 'DESE',
+    category: 'PPE Compliance', hazardTitle: 'Inadequate PPE Enforcement — Block C Site Workers',
+    riskLevel: 'MODERATE', complianceStatus: 'partial', workflowStatus: 'investigating',
+    inspector: 'Maj. O.B. Adeyemi', createdAt: '2025-09-12', updatedAt: '2025-09-30',
+    observations: 'Safety helmets observed on approximately 60% of workers during site visit. Several operatives working at height on scaffolding without safety harnesses. Site supervisor confirmed harnesses are available but not enforced.',
+    checkItems: [
+      { id: 'ci-002-1', prompt: 'All workers wearing hard hats at all times within the construction zone',   compliant: false, notes: '4 of 11 workers without hard hats' },
+      { id: 'ci-002-2', prompt: 'Safety harnesses worn and anchored for all work at heights above 2 metres', compliant: false, notes: 'Workers on 4m scaffold without harness' },
+      { id: 'ci-002-3', prompt: 'Safety boots (steel-toe) worn by all operatives',                          compliant: true,  notes: '' },
+      { id: 'ci-002-4', prompt: 'High-visibility vests worn in all vehicle movement areas',                 compliant: true,  notes: '' },
+    ],
+    correctiveActions: [
+      { id: 'ca-002-1', recommendation: 'Issue formal warning to contractor; enforce daily PPE toolbox talk', department: 'Safety Officer', urgency: 'HIGH', dueDate: '2025-10-10', status: 'in_progress' },
+    ],
+  },
+  {
+    id: 'HAZ-003', projectId: 'PRJ-2024-008', projectName: 'Engineering Workshop Construction',
+    projectCode: 'DEME/NWC/2024/008', directorateCode: 'DEME',
+    category: 'Fire Protection', hazardTitle: 'Inadequate Fire Suppression — Workshop Fuel Store',
+    riskLevel: 'CRITICAL', complianceStatus: 'non_compliant', workflowStatus: 'escalated',
+    inspector: 'Lt Col C.N. Okafor', createdAt: '2025-07-18', updatedAt: '2025-08-20',
+    observations: 'Temporary fuel store holding generator diesel adjacent to main workshop steel structure. No fire suppression system installed. Portable extinguishers absent. Smoking noted within 10 metres of the fuel store.',
+    checkItems: [
+      { id: 'ci-003-1', prompt: 'Approved fire suppression system installed in fuel and flammable materials store', compliant: false, notes: 'No system present' },
+      { id: 'ci-003-2', prompt: 'Minimum two CO2/dry powder extinguishers at each exit from fuel area',            compliant: false, notes: 'Zero extinguishers in area' },
+      { id: 'ci-003-3', prompt: 'No smoking / no naked flame signage displayed at fuel store perimeter',           compliant: false, notes: 'No signage installed' },
+      { id: 'ci-003-4', prompt: 'Fuel containers stored in bunded enclosure with spill containment',              compliant: false, notes: 'Drums on bare ground' },
+      { id: 'ci-003-5', prompt: 'Fire evacuation routes marked and clear of obstruction',                        compliant: true,  notes: '' },
+    ],
+    correctiveActions: [
+      { id: 'ca-003-1', recommendation: 'Relocate fuel store beyond 15m from structure and install bunded enclosure', department: 'Site Engineer', urgency: 'IMMEDIATE', dueDate: '2025-08-25', status: 'in_progress' },
+      { id: 'ca-003-2', recommendation: 'Install extinguishers and no-smoking signage; conduct emergency fire drill',  department: 'Safety Officer', urgency: 'IMMEDIATE', dueDate: '2025-08-25', status: 'pending' },
+      { id: 'ca-003-3', recommendation: 'Submit escalation report to Director of Military Engineering',                department: 'Directorate DEME', urgency: 'HIGH', dueDate: '2025-08-22', status: 'resolved' },
+    ],
+  },
+  {
+    id: 'HAZ-004', projectId: 'PRJ-2024-008', projectName: 'Engineering Workshop Construction',
+    projectCode: 'DEME/NWC/2024/008', directorateCode: 'DEME',
+    category: 'Equipment Safety', hazardTitle: 'Uncertified Scaffolding — Workshop Block A',
+    riskLevel: 'HIGH', complianceStatus: 'partial', workflowStatus: 'investigating',
+    inspector: 'Lt Col C.N. Okafor', createdAt: '2025-08-01', updatedAt: '2025-08-18',
+    observations: 'Scaffolding on the north face of Block A shows inadequate cross-bracing at levels 3 and 4. No scaffold tag visible confirming third-party inspection. Two base plates not sitting level on adequate sole boards.',
+    checkItems: [
+      { id: 'ci-004-1', prompt: 'Scaffold erected by competent contractor with current certification',       compliant: null,  notes: 'Certification not presented' },
+      { id: 'ci-004-2', prompt: 'Scaffold inspection tag (weekly) visible and current',                     compliant: false, notes: 'No tag found on structure' },
+      { id: 'ci-004-3', prompt: 'Cross-bracing installed at all required levels per design drawings',       compliant: false, notes: 'Levels 3 & 4 lacking bracing' },
+      { id: 'ci-004-4', prompt: 'Base plates and sole boards correctly positioned on stable ground',        compliant: false, notes: '2 uprights tilted on soft ground' },
+      { id: 'ci-004-5', prompt: 'Guard rails and toe boards fitted at all open edges above 2 metres',      compliant: true,  notes: '' },
+    ],
+    correctiveActions: [
+      { id: 'ca-004-1', recommendation: 'Halt use of scaffold at levels 3 & 4 until re-inspection by certified scaffold inspector', department: 'Site Engineer', urgency: 'IMMEDIATE', dueDate: '2025-08-22', status: 'in_progress' },
+    ],
+  },
+  {
+    id: 'HAZ-005', projectId: 'PRJ-2024-003', projectName: 'Command Office Complex Rehabilitation',
+    projectCode: 'DESE/RHB/2024/003', directorateCode: 'DESE',
+    category: 'Electrical Safety', hazardTitle: 'Post-Completion Electrical Certification',
+    riskLevel: 'LOW', complianceStatus: 'compliant', workflowStatus: 'closed',
+    inspector: 'Maj. K.I. Aliyu', createdAt: '2025-01-15', updatedAt: '2025-02-28',
+    observations: 'All electrical installations verified compliant with IEE wiring regulations. Earthing test certificates produced and filed. Distribution boards labelled and load balanced.',
+    checkItems: [
+      { id: 'ci-005-1', prompt: 'IEE electrical installation certificate obtained from certified contractor', compliant: true, notes: '' },
+      { id: 'ci-005-2', prompt: 'All circuit breakers and RCDs tested and functioning correctly',           compliant: true, notes: '' },
+      { id: 'ci-005-3', prompt: 'Earthing and bonding verified and test certificate on file',               compliant: true, notes: '' },
+      { id: 'ci-005-4', prompt: 'Lightning protection system installed and commissioned',                   compliant: true, notes: '' },
+    ],
+    correctiveActions: [],
+  },
+  {
+    id: 'HAZ-006', projectId: 'PRJ-2026-001', projectName: "Officers' Mess Renovation",
+    projectCode: 'DESE/RHB/2026/001', directorateCode: 'DESE',
+    category: 'Ventilation', hazardTitle: 'Inadequate Mechanical Ventilation — Kitchen Block',
+    riskLevel: 'MODERATE', complianceStatus: 'under_review', workflowStatus: 'investigating',
+    inspector: 'Maj. F.O. Eze', createdAt: '2026-01-10', updatedAt: '2026-02-05',
+    observations: 'Kitchen extract ventilation design under review by consultant. Proposed extract rate appears insufficient for the planned cooking equipment load. Grease trap and filter provision not yet addressed in drawings.',
+    checkItems: [
+      { id: 'ci-006-1', prompt: 'Ventilation design approved by certified building services engineer',         compliant: null,  notes: 'Design still under review' },
+      { id: 'ci-006-2', prompt: 'Extract rates calculated and validated for all kitchen equipment loads',     compliant: false, notes: 'Calculation not yet submitted' },
+      { id: 'ci-006-3', prompt: 'Grease filters and grease trap included in kitchen extract system design',  compliant: false, notes: 'Not addressed in current drawings' },
+      { id: 'ci-006-4', prompt: 'Fresh air supply rates meet minimum standards for occupancy',               compliant: null,  notes: 'Pending design finalisation' },
+    ],
+    correctiveActions: [
+      { id: 'ca-006-1', recommendation: 'Instruct consultant to resubmit kitchen ventilation design with full load calculations within 14 days', department: 'Project Consultant', urgency: 'MEDIUM', dueDate: '2026-02-20', status: 'pending' },
+    ],
+  },
+  {
+    id: 'HAZ-007', projectId: 'PRJ-2025-002', projectName: 'Medical Centre Extension — Phase 2',
+    projectCode: 'DEME/EXT/2025/002', directorateCode: 'DEME',
+    category: 'Hazardous Substances', hazardTitle: 'Medical Waste Containment & COSHH Compliance',
+    riskLevel: 'HIGH', complianceStatus: 'non_compliant', workflowStatus: 'action_required',
+    inspector: 'Capt. A.M. Suleiman', createdAt: '2025-07-14', updatedAt: '2025-08-30',
+    observations: 'Medical waste storage area does not meet COSHH requirements. Clinical waste bins not correctly segregated by hazard type. No COSHH data sheets available on site for chemical cleaning agents used in the works area.',
+    checkItems: [
+      { id: 'ci-007-1', prompt: 'COSHH assessment completed for all hazardous substances on site',                    compliant: false, notes: 'Assessment not produced' },
+      { id: 'ci-007-2', prompt: 'Safety data sheets (SDS) available on site for all chemical products',              compliant: false, notes: 'No SDS binder on site' },
+      { id: 'ci-007-3', prompt: 'Medical/clinical waste correctly segregated into colour-coded containers',           compliant: false, notes: 'Mixed waste found in single bin' },
+      { id: 'ci-007-4', prompt: 'All hazardous substances stored in locked, labelled, ventilated store',             compliant: true,  notes: '' },
+      { id: 'ci-007-5', prompt: 'Workers handling hazardous substances trained and records available',               compliant: null,  notes: 'Training records not presented' },
+    ],
+    correctiveActions: [
+      { id: 'ca-007-1', recommendation: 'Prepare full COSHH assessment and provide SDS folders to all work areas within 7 days', department: 'Contractor Safety Coordinator', urgency: 'HIGH', dueDate: '2025-09-07', status: 'in_progress' },
+      { id: 'ca-007-2', recommendation: 'Provide colour-coded clinical waste bins and brief all staff on segregation protocol', department: 'Site Engineer', urgency: 'HIGH', dueDate: '2025-09-10', status: 'pending' },
+    ],
+  },
+  {
+    id: 'HAZ-008', projectId: 'PRJ-2025-004', projectName: 'Ammunition Storage Facility Upgrade',
+    projectCode: 'DEME/MNT/2025/004', directorateCode: 'DEME',
+    category: 'Fueling Operations', hazardTitle: 'Generator Fuel Handling — Ordnance Proximity',
+    riskLevel: 'CRITICAL', complianceStatus: 'non_compliant', workflowStatus: 'escalated',
+    inspector: 'Lt Col P.A. Bala', createdAt: '2025-05-20', updatedAt: '2025-07-01',
+    observations: 'Generator fuel top-up operations conducted within the exclusion zone of the ammunition storage area. No spill kit present. Earthing cables not connected during fuel transfer. Class A hazard under military engineering safety protocols.',
+    checkItems: [
+      { id: 'ci-008-1', prompt: 'All fuel handling at least 50m from any explosive or ordnance store',     compliant: false, notes: 'Generator sits 18m from store' },
+      { id: 'ci-008-2', prompt: 'Static earthing cables connected during all fuel transfer operations',   compliant: false, notes: 'No earthing cables observed' },
+      { id: 'ci-008-3', prompt: 'Spill kit immediately available at fuel point',                          compliant: false, notes: 'No spill kit on site' },
+      { id: 'ci-008-4', prompt: 'Fire watch posted during all fueling operations',                        compliant: false, notes: 'No fire watch established' },
+      { id: 'ci-008-5', prompt: 'Fueling operations logged in site register',                             compliant: true,  notes: '' },
+    ],
+    correctiveActions: [
+      { id: 'ca-008-1', recommendation: 'Suspend all fueling operations until generator relocated beyond 50m exclusion zone', department: 'Site Engineer', urgency: 'IMMEDIATE', dueDate: '2025-05-25', status: 'resolved' },
+      { id: 'ca-008-2', recommendation: 'Procure static earthing kit and spill response kit before resuming fuel operations', department: 'Logistics Officer', urgency: 'IMMEDIATE', dueDate: '2025-06-01', status: 'in_progress' },
+    ],
+  },
+  {
+    id: 'HAZ-009', projectId: 'PRJ-2025-004', projectName: 'Ammunition Storage Facility Upgrade',
+    projectCode: 'DEME/MNT/2025/004', directorateCode: 'DEME',
+    category: 'Material Handling', hazardTitle: 'Heavy Precast Element Lifting Operations',
+    riskLevel: 'HIGH', complianceStatus: 'partial', workflowStatus: 'action_required',
+    inspector: 'Lt Col P.A. Bala', createdAt: '2025-06-03', updatedAt: '2025-07-01',
+    observations: 'Crane used for precast roof slab installation lacks current LOLER inspection certificate. Slinging arrangement on two panels did not match the approved method statement. Exclusion zone during lifts not maintained to required radius.',
+    checkItems: [
+      { id: 'ci-009-1', prompt: 'Crane holds valid LOLER inspection certificate (within 12 months)',               compliant: false, notes: 'Certificate expired March 2025' },
+      { id: 'ci-009-2', prompt: 'Lifting operation carried out per approved method statement',                    compliant: false, notes: 'Slinging deviation on 2 panels' },
+      { id: 'ci-009-3', prompt: 'Exclusion zone established and enforced during all overhead lifts',              compliant: false, notes: 'Workers within 3m of load path' },
+      { id: 'ci-009-4', prompt: 'Appointed lifting supervisor present and directing all lifts',                  compliant: true,  notes: '' },
+      { id: 'ci-009-5', prompt: 'All lifting accessories marked with SWL and within test date',                  compliant: true,  notes: '' },
+    ],
+    correctiveActions: [
+      { id: 'ca-009-1', recommendation: 'Halt crane operations and obtain LOLER re-inspection before next lift',           department: 'Contractor Site Manager', urgency: 'IMMEDIATE', dueDate: '2025-07-10', status: 'in_progress' },
+      { id: 'ca-009-2', recommendation: 'Re-brief lifting team on approved method statement and exclusion zone protocol', department: 'Appointed Person', urgency: 'HIGH', dueDate: '2025-07-08', status: 'pending' },
+    ],
+  },
+  {
+    id: 'HAZ-010', projectId: 'PRJ-2025-005', projectName: 'Tactical Operations Centre Upgrade',
+    projectCode: 'DESE/RHB/2025/005', directorateCode: 'DESE',
+    category: 'Walkways & Access', hazardTitle: 'Obstructed Emergency Egress — Operations Wing',
+    riskLevel: 'MODERATE', complianceStatus: 'partial', workflowStatus: 'open',
+    inspector: 'Maj. F.O. Eze', createdAt: '2025-07-22', updatedAt: '2025-08-10',
+    observations: 'Construction materials stored in corridor C blocking emergency exit route. Fire door to stairwell 2 requires a key to open from both sides. Signage for alternative egress route is missing.',
+    checkItems: [
+      { id: 'ci-010-1', prompt: 'All emergency exit routes free of materials and obstructions', compliant: false, notes: 'Corridor C blocked by rebar bundles' },
+      { id: 'ci-010-2', prompt: 'Fire doors operational from both sides without a key',        compliant: false, notes: 'Stairwell 2 door requires key from inside' },
+      { id: 'ci-010-3', prompt: 'Emergency exit signage illuminated and visible throughout',   compliant: false, notes: 'Alternative route sign missing' },
+      { id: 'ci-010-4', prompt: 'Minimum 1200mm clear width in all circulation routes',       compliant: true,  notes: '' },
+    ],
+    correctiveActions: [
+      { id: 'ca-010-1', recommendation: 'Remove all materials from corridor C and maintain clear egress at all times', department: 'Site Foreman', urgency: 'HIGH', dueDate: '2025-08-15', status: 'pending' },
+    ],
+  },
+  {
+    id: 'HAZ-011', projectId: 'PRJ-2025-005', projectName: 'Tactical Operations Centre Upgrade',
+    projectCode: 'DESE/RHB/2025/005', directorateCode: 'DESE',
+    category: 'Noise Control', hazardTitle: 'Noise Assessment — Operational Zone Proximity',
+    riskLevel: 'LOW', complianceStatus: 'compliant', workflowStatus: 'resolved',
+    inspector: 'Maj. F.O. Eze', createdAt: '2025-04-08', updatedAt: '2025-05-02',
+    observations: 'Noise levels measured and found within acceptable limits at the operational zone boundary. Noisy activities restricted to 08:00–17:00. Workers in high-noise areas using ear defenders.',
+    checkItems: [
+      { id: 'ci-011-1', prompt: 'Noise assessment conducted and limits confirmed at operational zone boundary', compliant: true, notes: '' },
+      { id: 'ci-011-2', prompt: 'Noisy works restricted to approved working hours',                            compliant: true, notes: '' },
+      { id: 'ci-011-3', prompt: 'Ear protection provided and worn in all high-noise areas',                   compliant: true, notes: '' },
+      { id: 'ci-011-4', prompt: 'Noise monitoring log maintained on site',                                    compliant: true, notes: '' },
+    ],
+    correctiveActions: [],
+  },
+  {
+    id: 'HAZ-012', projectId: 'PRJ-2024-011', projectName: 'Perimeter Fence Reconstruction — Phase 1',
+    projectCode: 'DESE/MNT/2024/011', directorateCode: 'DESE',
+    category: 'PPE Compliance', hazardTitle: 'PPE Compliance — Perimeter Fence Works',
+    riskLevel: 'MODERATE', complianceStatus: 'compliant', workflowStatus: 'resolved',
+    inspector: 'Capt. B.D. Nwosu', createdAt: '2024-07-05', updatedAt: '2024-10-15',
+    observations: 'Initial inspection identified non-compliance with cut-resistant glove requirement for wire handling. Issue rectified within 48 hours. Subsequent visits confirmed full PPE compliance across all fence installation crews.',
+    checkItems: [
+      { id: 'ci-012-1', prompt: 'Cut-resistant gloves worn during all wire strand and barbed wire handling',  compliant: true, notes: 'Rectified after initial finding' },
+      { id: 'ci-012-2', prompt: 'Hard hats worn at all times within the construction corridor',               compliant: true, notes: '' },
+      { id: 'ci-012-3', prompt: 'Safety boots with puncture-resistant sole worn by all workers',              compliant: true, notes: '' },
+      { id: 'ci-012-4', prompt: 'High-visibility vests worn in roadside sections of perimeter works',         compliant: true, notes: '' },
+    ],
+    correctiveActions: [],
+  },
+];
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+export type ReportType =
+  | 'Inspection Report'
+  | 'Hazard Assessment Report'
+  | 'Project Progress Report'
+  | 'Contractor Evaluation'
+  | 'Compliance Summary'
+  | 'Safety Violation Report'
+  | 'Operational Readiness Summary';
+
+export type ReportStatus         = 'draft' | 'pending_review' | 'approved' | 'rejected' | 'archived';
+export type ReportClassification = 'UNCLASSIFIED' | 'RESTRICTED' | 'CONFIDENTIAL';
+
+export interface MockReportFinding {
+  id:             string;
+  category:       string;
+  description:    string;
+  severity:       'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  recommendation: string;
+}
+
+export interface MockReport {
+  id:                string;
+  type:              ReportType;
+  title:             string;
+  projectId?:        string;
+  projectName?:      string;
+  projectCode?:      string;
+  directorateCode:   string;
+  classification:    ReportClassification;
+  generatedBy:       string;
+  status:            ReportStatus;
+  createdAt:         string;
+  updatedAt:         string;
+  executiveSummary:  string;
+  findings:          MockReportFinding[];
+  safetyFindings:    string[];
+  recommendations:   string[];
+  approvedBy?:       string;
+  approvedAt?:       string;
+}
+
+export const MOCK_REPORTS: MockReport[] = [
+  {
+    id: 'RPT-2025-001', type: 'Inspection Report',
+    title: 'Q3 2025 Progress Inspection — Barracks Block C',
+    projectId: 'PRJ-2025-001', projectName: 'Barracks Renovation — Block C', projectCode: 'DESE/RHB/2025/001',
+    directorateCode: 'DESE', classification: 'UNCLASSIFIED',
+    generatedBy: 'Maj. O.B. Adeyemi', status: 'approved',
+    createdAt: '2025-10-08', updatedAt: '2025-10-10',
+    approvedBy: 'Lt Col E.K. Hassan', approvedAt: '2025-10-10',
+    executiveSummary: 'The Q3 2025 progress inspection of Barracks Block C was conducted on 6 October 2025. Structural works are 75% complete. Key concerns include exposed electrical wiring on the ground floor and scaffold non-compliance. Contractor performance is satisfactory overall, though safety enforcement requires immediate attention.',
+    findings: [
+      { id: 'f-001-1', category: 'Structural', description: 'Masonry blockwork on first floor is progressing in accordance with approved drawings.', severity: 'LOW', recommendation: 'Continue monitoring against programme.' },
+      { id: 'f-001-2', category: 'Electrical', description: 'Exposed live wiring observed at three junction points on the ground floor corridor.', severity: 'HIGH', recommendation: 'Immediately enclose in GI conduit; obtain earthing certificate.' },
+      { id: 'f-001-3', category: 'Safety', description: 'Approximately 40% of workers not wearing hard hats during site visit.', severity: 'MEDIUM', recommendation: 'Issue formal warning; enforce daily PPE briefing.' },
+    ],
+    safetyFindings: [
+      'Workers on scaffolding at 4m height observed without safety harnesses.',
+      'Temporary power cable routed across pedestrian walkway adjacent to stairwell.',
+    ],
+    recommendations: [
+      'Enclose all exposed wiring in GI conduit within 7 days.',
+      'Issue formal PPE enforcement notice to contractor site manager.',
+      'Commission independent electrical inspection before next phase.',
+    ],
+  },
+  {
+    id: 'RPT-2025-002', type: 'Hazard Assessment Report',
+    title: 'Critical Fire Hazard — Engineering Workshop Fuel Store',
+    projectId: 'PRJ-2024-008', projectName: 'Engineering Workshop Construction', projectCode: 'DEME/NWC/2024/008',
+    directorateCode: 'DEME', classification: 'RESTRICTED',
+    generatedBy: 'Lt Col C.N. Okafor', status: 'approved',
+    createdAt: '2025-08-22', updatedAt: '2025-08-24',
+    approvedBy: 'Col R.A. Dangana', approvedAt: '2025-08-24',
+    executiveSummary: 'A critical fire hazard was identified at the Engineering Workshop Construction site on 18 July 2025. A temporary diesel fuel store has been positioned adjacent to the main workshop steel structure without any fire suppression provisions. This constitutes an immediate risk to life and property. Escalation to Directorate level has been initiated.',
+    findings: [
+      { id: 'f-002-1', category: 'Fire Protection', description: 'No fire suppression system, portable extinguishers, or safety signage present at the fuel store.', severity: 'CRITICAL', recommendation: 'Immediate installation of extinguishers and no-smoking signage.' },
+      { id: 'f-002-2', category: 'Storage', description: 'Diesel drums stored directly on bare ground without bunded containment.', severity: 'CRITICAL', recommendation: 'Install bunded spill containment enclosure before resuming fuel operations.' },
+    ],
+    safetyFindings: [
+      'Fuel store positioned within 20 metres of workshop steel structure — minimum clearance is 15 metres.',
+      'No fire watch posted during fueling operations.',
+    ],
+    recommendations: [
+      'Halt all fuel storage operations until relocation to a compliant area.',
+      'Install bunded containment, extinguishers, and mandatory signage.',
+      'Conduct site-wide fire emergency drill within 14 days.',
+    ],
+  },
+  {
+    id: 'RPT-2025-003', type: 'Project Progress Report',
+    title: 'Q3 2025 Progress Summary — Medical Centre Extension Phase 2',
+    projectId: 'PRJ-2025-002', projectName: 'Medical Centre Extension — Phase 2', projectCode: 'DEME/EXT/2025/002',
+    directorateCode: 'DEME', classification: 'UNCLASSIFIED',
+    generatedBy: 'Capt. A.M. Suleiman', status: 'pending_review',
+    createdAt: '2025-09-05', updatedAt: '2025-09-05',
+    executiveSummary: 'The Medical Centre Extension Phase 2 project is currently 62% complete against a programme target of 70%. A 2-week delay is attributable to late delivery of specialist medical services equipment. COSHH compliance deficiencies were noted during the inspection of 14 July 2025 and are subject to a separate Hazard Assessment Report.',
+    findings: [
+      { id: 'f-003-1', category: 'Programme', description: 'Project is 8% behind scheduled programme. Contractor has submitted recovery plan.', severity: 'MEDIUM', recommendation: 'Monitor recovery plan milestones closely over next 4 weeks.' },
+      { id: 'f-003-2', category: 'Quality', description: 'Structural concrete in the new ward block has passed all cube test results to date.', severity: 'LOW', recommendation: 'Continue monitoring testing regime.' },
+    ],
+    safetyFindings: [
+      'Medical waste segregation non-compliance identified — COSHH assessment outstanding.',
+    ],
+    recommendations: [
+      'Enforce recovery programme; weekly progress meetings with contractor PM.',
+      'Close out COSHH non-compliance within 7 days — separate action assigned.',
+    ],
+  },
+  {
+    id: 'RPT-2025-004', type: 'Compliance Summary',
+    title: 'Q2 2025 Compliance Summary — Directorate DESE',
+    directorateCode: 'DESE', classification: 'RESTRICTED',
+    generatedBy: 'Maj. F.O. Eze', status: 'approved',
+    createdAt: '2025-07-30', updatedAt: '2025-08-02',
+    approvedBy: 'Lt Col E.K. Hassan', approvedAt: '2025-08-02',
+    executiveSummary: 'This report summarises the compliance performance of all DESE-managed construction projects during Q2 2025 (April–June). Average compliance score across 4 active projects was 76%. Key non-conformances relate to PPE enforcement and documentation completeness. One project (Barracks Block C) has been issued a formal improvement notice.',
+    findings: [
+      { id: 'f-004-1', category: 'PPE Compliance', description: 'PPE non-compliance identified on 2 of 4 DESE projects during the quarter.', severity: 'MEDIUM', recommendation: 'Mandatory PPE audit to be conducted at the start of each calendar month.' },
+      { id: 'f-004-2', category: 'Documentation', description: 'As-built drawing submissions are 3 weeks overdue on the Officers Mess project.', severity: 'HIGH', recommendation: 'Issue contractual notice requiring submission within 14 days.' },
+    ],
+    safetyFindings: [
+      'Safety management plan not updated since project commencement on one project.',
+      'First aid box contents found expired on two separate site visits.',
+    ],
+    recommendations: [
+      'Conduct mandatory monthly PPE audit across all DESE sites.',
+      'Issue contractual notice for overdue as-built drawings.',
+      'Update Safety Management Plans on all active projects.',
+    ],
+  },
+  {
+    id: 'RPT-2025-005', type: 'Safety Violation Report',
+    title: 'Class A Safety Violation — Ammunition Storage Facility',
+    projectId: 'PRJ-2025-004', projectName: 'Ammunition Storage Facility Upgrade', projectCode: 'DEME/MNT/2025/004',
+    directorateCode: 'DEME', classification: 'CONFIDENTIAL',
+    generatedBy: 'Lt Col P.A. Bala', status: 'approved',
+    createdAt: '2025-05-22', updatedAt: '2025-05-25',
+    approvedBy: 'Col R.A. Dangana', approvedAt: '2025-05-25',
+    executiveSummary: 'A Class A safety violation was identified on 20 May 2025 at the Ammunition Storage Facility Upgrade site. Generator fueling operations were being conducted within the ordnance exclusion zone without earthing, spill containment, or fire watch. Operations were immediately suspended. This report documents the violation, corrective actions taken, and preventive measures required.',
+    findings: [
+      { id: 'f-005-1', category: 'Exclusion Zone', description: 'Generator positioned 18m from ordnance store — minimum clearance is 50m.', severity: 'CRITICAL', recommendation: 'Immediate relocation of generator beyond 50m exclusion boundary.' },
+      { id: 'f-005-2', category: 'Fuel Safety', description: 'No static earthing cables connected during fuel transfer. No spill kit on site.', severity: 'CRITICAL', recommendation: 'Procure earthing equipment and spill kit before operations resume.' },
+    ],
+    safetyFindings: [
+      'No fire watch posted during fuel transfer operations adjacent to ordnance store.',
+      'Fueling contractor not briefed on ordnance exclusion zone requirements.',
+    ],
+    recommendations: [
+      'Suspend all fuel operations until generator relocation is completed and verified.',
+      'Mandatory safety briefing for all site contractors on ordnance exclusion requirements.',
+      'Formal disciplinary review of site supervision to be conducted by Directorate.',
+    ],
+  },
+  {
+    id: 'RPT-2025-006', type: 'Contractor Evaluation',
+    title: 'Contractor Performance Evaluation — Kaduna Engineering Ltd',
+    projectId: 'PRJ-2024-008', projectName: 'Engineering Workshop Construction', projectCode: 'DEME/NWC/2024/008',
+    directorateCode: 'DEME', classification: 'RESTRICTED',
+    generatedBy: 'Lt Col C.N. Okafor', status: 'draft',
+    createdAt: '2025-10-01', updatedAt: '2025-10-01',
+    executiveSummary: 'Mid-project performance evaluation of Kaduna Engineering Ltd on the Engineering Workshop Construction. Assessment covers programme compliance, quality of workmanship, safety management, and sub-contractor management. Overall performance is assessed as MARGINAL — improvements required in safety enforcement before final payment recommendation.',
+    findings: [
+      { id: 'f-006-1', category: 'Programme', description: 'Project is 3 weeks behind the contracted programme. Recovery plan submitted but not yet proven.', severity: 'MEDIUM', recommendation: 'Formal programme recovery meeting; bi-weekly progress reporting required.' },
+      { id: 'f-006-2', category: 'Quality', description: 'Concrete cube test results are consistently passing to date.', severity: 'LOW', recommendation: 'Maintain current testing regime.' },
+      { id: 'f-006-3', category: 'Safety', description: 'Two safety violations identified during the contract period — fuel store and scaffold.', severity: 'HIGH', recommendation: 'Issue formal improvement notice; withhold retention until resolved.' },
+    ],
+    safetyFindings: [
+      'Two separate safety violations documented during the contract period.',
+      'Scaffold inspection regime not maintained as required by contract.',
+    ],
+    recommendations: [
+      'Issue formal performance improvement notice referencing safety violations.',
+      'Withhold 5% retention until safety compliance is independently verified.',
+    ],
+  },
+  {
+    id: 'RPT-2025-007', type: 'Operational Readiness Summary',
+    title: 'Q3 2025 Operational Readiness Summary — Directorate DEME',
+    directorateCode: 'DEME', classification: 'RESTRICTED',
+    generatedBy: 'Col R.A. Dangana', status: 'pending_review',
+    createdAt: '2025-10-15', updatedAt: '2025-10-15',
+    executiveSummary: 'This quarterly summary assesses the operational readiness of all DEME-managed military construction and engineering projects as at 15 October 2025. Of 5 active projects, 1 is on schedule, 2 are delayed, and 2 are on hold pending resolution of safety and compliance issues. Corrective actions are in progress on the critical issues identified in Q2.',
+    findings: [
+      { id: 'f-007-1', category: 'Programme Performance', description: '3 of 5 DEME projects are behind programme by more than 2 weeks.', severity: 'HIGH', recommendation: 'Directorate-level programme review meeting required within 2 weeks.' },
+      { id: 'f-007-2', category: 'Safety Compliance', description: 'Two projects have outstanding Class A or B safety violations requiring escalated resolution.', severity: 'CRITICAL', recommendation: 'Close out outstanding violations before Q4 programme review.' },
+    ],
+    safetyFindings: [
+      'Ammunition Storage Facility: Class A violation — fuel exclusion zone breach (partially resolved).',
+      'Engineering Workshop: Scaffold non-compliance and fire hazard remain open.',
+    ],
+    recommendations: [
+      'Convene emergency programme recovery meeting for all delayed DEME projects.',
+      'Directorate Safety Officer to conduct unannounced inspections on the two projects with open violations.',
+      'Escalate to Command level if violations are not closed by Q4 deadline.',
+    ],
+  },
+  {
+    id: 'RPT-2026-001', type: 'Project Progress Report',
+    title: 'Inception Report — Officers Mess Renovation',
+    projectId: 'PRJ-2026-001', projectName: "Officers' Mess Renovation", projectCode: 'DESE/RHB/2026/001',
+    directorateCode: 'DESE', classification: 'UNCLASSIFIED',
+    generatedBy: 'Maj. F.O. Eze', status: 'draft',
+    createdAt: '2026-01-20', updatedAt: '2026-01-20',
+    executiveSummary: 'This inception report covers the mobilisation phase of the Officers Mess Renovation project. The contractor has mobilised to site, temporary works have been erected, and the project programme has been agreed. A ventilation design review is currently outstanding and must be resolved before mechanical works proceed.',
+    findings: [
+      { id: 'f-008-1', category: 'Mobilisation', description: 'Contractor has fully mobilised to site with adequate plant and personnel.', severity: 'LOW', recommendation: 'Continue monitoring.' },
+      { id: 'f-008-2', category: 'Design', description: 'Kitchen ventilation design requires consultant revision before mechanical works can proceed.', severity: 'MEDIUM', recommendation: 'Chase consultant for revised design submission within 14 days.' },
+    ],
+    safetyFindings: [],
+    recommendations: [
+      'Resolve kitchen ventilation design before mechanical works commence.',
+      'Confirm Health and Safety file handover requirements with project manager.',
+    ],
+  },
+];
+
+// ─── Analytics data ────────────────────────────────────────────────────────────
+
+export const MOCK_COMPLIANCE_TREND = [
+  { month: 'Jan 25', compliance: 68, inspections: 8  },
+  { month: 'Feb 25', compliance: 71, inspections: 10 },
+  { month: 'Mar 25', compliance: 74, inspections: 12 },
+  { month: 'Apr 25', compliance: 70, inspections: 9  },
+  { month: 'May 25', compliance: 77, inspections: 14 },
+  { month: 'Jun 25', compliance: 79, inspections: 11 },
+  { month: 'Jul 25', compliance: 76, inspections: 13 },
+  { month: 'Aug 25', compliance: 82, inspections: 15 },
+  { month: 'Sep 25', compliance: 80, inspections: 12 },
+  { month: 'Oct 25', compliance: 84, inspections: 16 },
+];
+
+export const MOCK_RISK_DISTRIBUTION = [
+  { directorate: 'DESE', critical: 1, high: 4, moderate: 6, low: 8 },
+  { directorate: 'DEME', critical: 3, high: 5, moderate: 4, low: 5 },
+];
+
+export const MOCK_MODULE_PERFORMANCE = [
+  { module: 'OFFICES',  avgScore: 91, inspections: 9,  openActions: 3  },
+  { module: 'BARRACKS', avgScore: 78, inspections: 18, openActions: 8  },
+  { module: 'WORKSHOP', avgScore: 70, inspections: 12, openActions: 14 },
+  { module: 'MEDICAL',  avgScore: 65, inspections: 7,  openActions: 12 },
+  { module: 'ORDNANCE', avgScore: 88, inspections: 4,  openActions: 6  },
+];

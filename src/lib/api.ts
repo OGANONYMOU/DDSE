@@ -1057,3 +1057,72 @@ export async function getEvidenceDownloadUrl(evidenceId: string) {
     params: { evidenceId },
   });
 }
+
+// ============================================================================
+// PROJECTS
+// ============================================================================
+
+export async function getProjects() {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown[];
+}
+
+export async function getProjectById(id: string) {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return data as unknown;
+}
+
+// ============================================================================
+// HAZARD ASSESSMENTS
+// ============================================================================
+
+export async function getHazardAssessments() {
+  const { data, error } = await supabase
+    .from('hazard_assessments')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown[];
+}
+
+export async function getHazardById(id: string) {
+  const { data, error } = await supabase
+    .from('hazard_assessments')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return data as unknown;
+}
+
+// ============================================================================
+// REPORTS
+// ============================================================================
+
+export async function getReports() {
+  const { data, error } = await supabase
+    .from('reports')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown[];
+}
+
+export async function getReportById(id: string) {
+  const { data, error } = await supabase
+    .from('reports')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return data as unknown;
+}

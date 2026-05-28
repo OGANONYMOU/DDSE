@@ -1,7 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, FolderKanban } from 'lucide-react';
 
-import { MOCK_PROJECTS, MOCK_PROJECT_DETAILS } from '../lib/mock-data';
+import { MOCK_PROJECTS, MOCK_PROJECT_DETAILS, type MockProject, type MockProjectDetail } from '../lib/mock-data';
+import { getProjectById } from '../lib/api';
 import PageHeader from '../components/ui/PageHeader';
 import StatusBadge from '../components/ui/StatusBadge';
 import DashboardSection from '../components/dashboard/DashboardSection';
@@ -15,8 +17,17 @@ import RecommendationPanel from '../components/projects/RecommendationPanel';
 export default function ProjectDetailPage() {
   const { id }     = useParams<{ id: string }>();
   const navigate   = useNavigate();
-  const project    = MOCK_PROJECTS.find((p) => p.id === id);
-  const detail     = id ? (MOCK_PROJECT_DETAILS[id] ?? null) : null;
+  const [project, setProject] = useState<MockProject | null>(
+    MOCK_PROJECTS.find((p) => p.id === id) ?? null
+  );
+  const detail: MockProjectDetail | null = id ? (MOCK_PROJECT_DETAILS[id] ?? null) : null;
+
+  useEffect(() => {
+    if (!id) return;
+    getProjectById(id)
+      .then((data) => { if (data) setProject(data as MockProject); })
+      .catch(() => {});
+  }, [id]);
 
   if (!project) {
     return (

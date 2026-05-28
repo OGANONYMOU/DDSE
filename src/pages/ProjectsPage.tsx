@@ -1,9 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FolderKanban, Plus, Search } from 'lucide-react';
 import PageHeader from '../components/ui/PageHeader';
 import StatusBadge from '../components/ui/StatusBadge';
+import { useDebounce } from '../hooks/useDebounce';
+import { usePagination } from '../hooks/usePagination';
+import PaginationBar from '../components/ui/PaginationBar';
 import { MOCK_PROJECTS, type MockProject } from '../lib/mock-data';
+import { getProjects } from '../lib/api';
 
 const RISK_COLOR: Record<MockProject['riskLevel'], string> = {
   LOW:      'text-emerald-400',
@@ -35,9 +39,17 @@ export default function ProjectsPage() {
   const navigate                        = useNavigate();
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [allProjects, setAllProjects]   = useState<MockProject[]>(MOCK_PROJECTS);
+  const debouncedSearch                 = useDebounce(search, 250);
 
-  const filtered = MOCK_PROJECTS.filter((p) => {
-    const q = search.toLowerCase();
+  useEffect(() => {
+    getProjects()
+      .then((data) => { if (Array.isArray(data) && data.length > 0) setAllProjects(data as MockProject[]); })
+      .catch(() => {});
+  }, []);
+
+  const filtered = useMemo(() => allProjects.filter((p) => {
+    const q = debouncedSearch.toLowerCase();
     const matchSearch =
       q === '' ||
       p.title.toLowerCase().includes(q) ||
@@ -46,13 +58,21 @@ export default function ProjectsPage() {
       p.contractor.toLowerCase().includes(q) ||
       p.location.toLowerCase().includes(q);
     return matchSearch && (statusFilter === 'all' || p.status === statusFilter);
-  });
+  }), [allProjects, debouncedSearch, statusFilter]);
+
+  const { page, totalPages, offset, pageSize, hasPrev, hasNext, goTo, next, prev, reset } =
+    usePagination({ total: filtered.length });
+
+  // Reset to page 1 when filters change
+  useEffect(() => { reset(); }, [debouncedSearch, statusFilter, reset]);
+
+  const paginated = useMemo(() => filtered.slice(offset, offset + pageSize), [filtered, offset, pageSize]);
 
   const counts = {
-    total:       MOCK_PROJECTS.length,
-    in_progress: MOCK_PROJECTS.filter((p) => p.status === 'in_progress').length,
-    completed:   MOCK_PROJECTS.filter((p) => p.status === 'completed').length,
-    on_hold:     MOCK_PROJECTS.filter((p) => p.status === 'on_hold').length,
+    total:       allProjects.length,
+    in_progress: allProjects.filter((p) => p.status === 'in_progress').length,
+    completed:   allProjects.filter((p) => p.status === 'completed').length,
+    on_hold:     allProjects.filter((p) => p.status === 'on_hold').length,
   };
 
   return (
@@ -137,7 +157,7 @@ export default function ProjectsPage() {
               </p>
             </div>
           ) : (
-            filtered.map((project) => (
+            paginated.map((project) => (
               <div
                 key={project.id}
                 onClick={() => navigate(`/projects/${project.id}`)}
@@ -202,9 +222,20 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      <p className="text-right text-[10px] font-mono text-slate-600 uppercase">
-        Showing {filtered.length} of {MOCK_PROJECTS.length} registered projects
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-mono text-slate-600 uppercase">
+          Showing {Math.min(offset + 1, filtered.length)}–{Math.min(offset + pageSize, filtered.length)} of {filtered.length} projects
+        </p>
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+          onPrev={prev}
+          onNext={next}
+          onGoTo={goTo}
+        />
+      </div>
     </div>
   );
 }

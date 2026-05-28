@@ -1,46 +1,74 @@
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import type { PlatformUser } from '../types/platform';
 import AppShell from '../layouts/AppShell';
+import { PageLoader } from '../components/ui/SkeletonLoader';
+import RouteGuard from '../components/auth/RouteGuard';
 
-import DashboardPage       from '../pages/DashboardPage';
-import ProjectsPage        from '../pages/ProjectsPage';
-import ProjectDetailPage   from '../pages/ProjectDetailPage';
-import InspectionsPage      from '../pages/InspectionsPage';
-import InspectionDetailPage from '../pages/InspectionDetailPage';
-import SafetyPage       from '../pages/SafetyPage';
-import ReportsPage      from '../pages/ReportsPage';
-import PersonnelPage    from '../pages/PersonnelPage';
-import NotificationsPage from '../pages/NotificationsPage';
-import SettingsPage     from '../pages/SettingsPage';
+// Lazy-loaded pages — each chunk only downloaded when first visited
+const DashboardPage       = lazy(() => import('../pages/DashboardPage'));
+const ProjectsPage        = lazy(() => import('../pages/ProjectsPage'));
+const ProjectDetailPage   = lazy(() => import('../pages/ProjectDetailPage'));
+const InspectionsPage     = lazy(() => import('../pages/InspectionsPage'));
+const InspectionDetailPage = lazy(() => import('../pages/InspectionDetailPage'));
+const SafetyPage          = lazy(() => import('../pages/SafetyPage'));
+const SafetyDetailPage    = lazy(() => import('../pages/SafetyDetailPage'));
+const AnalyticsPage       = lazy(() => import('../pages/AnalyticsPage'));
+const ReportsPage         = lazy(() => import('../pages/ReportsPage'));
+const ReportsDetailPage   = lazy(() => import('../pages/ReportsDetailPage'));
+const PersonnelPage       = lazy(() => import('../pages/PersonnelPage'));
+const NotificationsPage   = lazy(() => import('../pages/NotificationsPage'));
+const SettingsPage        = lazy(() => import('../pages/SettingsPage'));
+const AccessDeniedPage    = lazy(() => import('../pages/AccessDeniedPage'));
+
+function Lazy({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
+}
 
 interface RouterOptions {
   user:     PlatformUser;
   onLogout: () => Promise<void> | void;
 }
 
-/**
- * createAppRouter builds a fresh router instance each time the authenticated
- * user changes (login / logout). This keeps user & onLogout in scope for
- * the AppShell wrapper without needing a separate context provider at the
- * router level.
- */
 export function createAppRouter({ user, onLogout }: RouterOptions) {
   return createBrowserRouter([
     {
       path:    '/',
       element: <AppShell user={user} onLogout={onLogout} />,
       children: [
-        { index: true,           element: <DashboardPage /> },
-        { path: 'projects',      element: <ProjectsPage /> },
-        { path: 'projects/:id', element: <ProjectDetailPage /> },
-        { path: 'inspections',        element: <InspectionsPage /> },
-        { path: 'inspections/:id',   element: <InspectionDetailPage /> },
-        { path: 'safety',        element: <SafetyPage /> },
-        { path: 'reports',       element: <ReportsPage /> },
-        { path: 'personnel',     element: <PersonnelPage /> },
-        { path: 'notifications', element: <NotificationsPage /> },
-        { path: 'settings',      element: <SettingsPage /> },
-        { path: '*',             element: <Navigate to="/" replace /> },
+        { index: true,              element: <Lazy><DashboardPage /></Lazy> },
+        { path: 'projects',         element: <Lazy><ProjectsPage /></Lazy> },
+        { path: 'projects/:id',     element: <Lazy><ProjectDetailPage /></Lazy> },
+        { path: 'inspections',      element: <Lazy><InspectionsPage /></Lazy> },
+        { path: 'inspections/:id',  element: <Lazy><InspectionDetailPage /></Lazy> },
+        { path: 'safety',           element: <Lazy><SafetyPage /></Lazy> },
+        { path: 'safety/:id',       element: <Lazy><SafetyDetailPage /></Lazy> },
+        {
+          path: 'analytics',
+          element: (
+            <Lazy>
+              <RouteGuard deck="analytics">
+                <AnalyticsPage />
+              </RouteGuard>
+            </Lazy>
+          ),
+        },
+        { path: 'reports',          element: <Lazy><ReportsPage /></Lazy> },
+        { path: 'reports/:id',      element: <Lazy><ReportsDetailPage /></Lazy> },
+        {
+          path: 'personnel',
+          element: (
+            <Lazy>
+              <RouteGuard permission="personnel.view_own">
+                <PersonnelPage />
+              </RouteGuard>
+            </Lazy>
+          ),
+        },
+        { path: 'notifications',    element: <Lazy><NotificationsPage /></Lazy> },
+        { path: 'settings',         element: <Lazy><SettingsPage /></Lazy> },
+        { path: 'access-denied',    element: <Lazy><AccessDeniedPage /></Lazy> },
+        { path: '*',                element: <Navigate to="/" replace /> },
       ],
     },
   ]);
