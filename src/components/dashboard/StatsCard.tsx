@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-export type StatTone = 'info' | 'warning' | 'danger' | 'success';
+export type StatTone  = 'info' | 'warning' | 'danger' | 'success';
 export type StatTrend = 'UP' | 'DOWN' | 'STABLE';
 
 interface StatsCardProps {
@@ -15,11 +16,11 @@ interface StatsCardProps {
   subLabel?:   string;
 }
 
-const TONE_MAP: Record<StatTone, { icon: string; border: string; bg: string; iconColor: string; valueColor: string }> = {
-  info:    { icon: 'text-sky-400',     border: 'border-sky-500/15',    bg: 'bg-sky-500/8',     iconColor: 'text-sky-400',     valueColor: 'text-white' },
-  success: { icon: 'text-emerald-400', border: 'border-emerald-500/15', bg: 'bg-emerald-500/8', iconColor: 'text-emerald-400', valueColor: 'text-white' },
-  warning: { icon: 'text-amber-400',   border: 'border-amber-500/15',  bg: 'bg-amber-500/8',   iconColor: 'text-amber-400',   valueColor: 'text-white' },
-  danger:  { icon: 'text-rose-400',    border: 'border-rose-500/15',   bg: 'bg-rose-500/8',    iconColor: 'text-rose-400',    valueColor: 'text-rose-300' },
+const TONE_MAP: Record<StatTone, { border: string; bg: string; iconColor: string; valueColor: string; accent: string }> = {
+  info:    { border: 'border-sky-500/15',     bg: 'bg-sky-500/8',     iconColor: 'text-sky-400',     valueColor: 'text-white',     accent: 'bg-sky-500/40' },
+  success: { border: 'border-emerald-500/15', bg: 'bg-emerald-500/8', iconColor: 'text-emerald-400', valueColor: 'text-white',     accent: 'bg-emerald-500/40' },
+  warning: { border: 'border-amber-500/15',   bg: 'bg-amber-500/8',   iconColor: 'text-amber-400',   valueColor: 'text-white',     accent: 'bg-amber-500/40' },
+  danger:  { border: 'border-rose-500/15',    bg: 'bg-rose-500/8',    iconColor: 'text-rose-400',    valueColor: 'text-rose-300',  accent: 'bg-rose-500/40' },
 };
 
 const TREND_ICON: Record<StatTrend, LucideIcon> = {
@@ -34,7 +35,7 @@ const TREND_COLOR: Record<StatTrend, string> = {
   STABLE: 'text-slate-500',
 };
 
-export default function StatsCard({
+const StatsCard = memo(function StatsCard({
   label,
   value,
   unit,
@@ -44,20 +45,22 @@ export default function StatsCard({
   trendValue,
   subLabel,
 }: StatsCardProps) {
-  const t = TONE_MAP[tone];
+  const t         = TONE_MAP[tone];
   const TrendIcon = trend ? TREND_ICON[trend] : null;
 
   return (
     <div
+      role="status"
+      aria-label={`${label}: ${value}${unit ? ' ' + unit : ''}`}
       className={`relative flex flex-col gap-3 overflow-hidden rounded-xl border ${t.border} bg-slate-950/70 p-5 backdrop-blur-sm`}
     >
-      {/* Faint top-line accent */}
-      <div className={`absolute inset-x-0 top-0 h-[2px] ${tone === 'danger' ? 'bg-rose-500/40' : tone === 'warning' ? 'bg-amber-500/40' : tone === 'success' ? 'bg-emerald-500/40' : 'bg-sky-500/40'}`} />
+      {/* Top accent line */}
+      <div className={`absolute inset-x-0 top-0 h-[2px] ${t.accent}`} aria-hidden="true" />
 
-      {/* Icon + label row */}
+      {/* Icon + label */}
       <div className="flex items-center justify-between">
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
-        <div className={`flex h-8 w-8 items-center justify-center rounded-lg border ${t.border} ${t.bg}`}>
+        <div className={`flex h-8 w-8 items-center justify-center rounded-lg border ${t.border} ${t.bg}`} aria-hidden="true">
           <Icon className={`h-4 w-4 ${t.iconColor}`} />
         </div>
       </div>
@@ -78,12 +81,14 @@ export default function StatsCard({
           <p className="text-[10px] font-mono text-slate-600 uppercase">{subLabel}</p>
         )}
         {trend && TrendIcon && (
-          <div className={`ml-auto flex items-center gap-1 text-[10px] font-mono ${TREND_COLOR[trend]}`}>
-            <TrendIcon className="h-3 w-3" />
+          <div className={`ml-auto flex items-center gap-1 text-[10px] font-mono ${TREND_COLOR[trend]}`} aria-label={`Trend: ${trend}`}>
+            <TrendIcon className="h-3 w-3" aria-hidden="true" />
             {trendValue && <span>{trendValue}</span>}
           </div>
         )}
       </div>
     </div>
   );
-}
+});
+
+export default StatsCard;

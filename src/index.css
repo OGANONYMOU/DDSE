@@ -101,3 +101,47 @@
 .animate-flicker      { animation: flicker 5s ease-in-out infinite; }
 .animate-cursor       { animation: type-cursor 1s step-end infinite; }
 .animate-glow-pulse   { animation: glow-pulse-green 2s ease-in-out infinite; }
+
+/* ══ Accessibility — focus rings ══
+   Consistent high-contrast focus outline for keyboard navigation.
+   Uses :focus-visible so mouse users are unaffected.
+*/
+*:focus-visible {
+  outline: 2px solid rgba(56, 182, 255, 0.7);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip navigation link — visible only on keyboard focus */
+.skip-nav {
+  position: fixed;
+  top: -100%;
+  left: 0;
+  z-index: 9999;
+  padding: 0.5rem 1rem;
+  background: #0d1117;
+  color: #38b6ff;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-bottom-right-radius: 0.5rem;
+  border: 1px solid rgba(56, 182, 255, 0.3);
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-nav:focus {
+  top: 0;
+}
+
+/* Reduce motion for users who request it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

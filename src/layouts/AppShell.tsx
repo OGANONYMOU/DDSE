@@ -20,9 +20,15 @@ function ShellInner({ onLogout }: { onLogout: () => Promise<void> | void }) {
 
   return (
     <div className="min-h-screen bg-[#03040f] text-white">
+      {/* Skip navigation — keyboard users jump past sidebar */}
+      <a href="#main-content" className="skip-nav">
+        Skip to main content
+      </a>
+
       {/* Background grid */}
       <div
         className="pointer-events-none fixed inset-0 z-0"
+        aria-hidden="true"
         style={{
           backgroundImage:
             'linear-gradient(rgba(56,182,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(56,182,255,0.012) 1px, transparent 1px)',
@@ -44,7 +50,11 @@ function ShellInner({ onLogout }: { onLogout: () => Promise<void> | void }) {
       {/* Right-hand panel — offset only on lg+ */}
       <div className="lg:ml-[260px] flex min-h-screen flex-col">
         <Navbar />
-        <main className="relative z-10 flex-1 overflow-y-auto px-4 pb-10 pt-[76px] lg:px-6">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="relative z-10 flex-1 overflow-y-auto px-4 pb-10 pt-[76px] lg:px-6 focus:outline-none"
+        >
           <ErrorBoundary>
             <Outlet />
           </ErrorBoundary>

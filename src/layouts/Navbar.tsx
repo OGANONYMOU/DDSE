@@ -1,16 +1,21 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, Search, ChevronDown, Clock, Menu } from 'lucide-react';
+import { Bell, Search, ChevronDown, Clock, Menu, Activity } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSidebar } from '../context/SidebarContext';
-import { getClearanceLevel, getClearanceLabel, getRoleConfig } from '../lib/rbac';
+import { getClearanceLevel, getClearanceLabel, getRoleConfig, hasPermission } from '../lib/rbac';
 import { MOCK_NOTIFICATIONS } from '../lib/mock-data';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { observability } from '../lib/observability';
 
 const unreadCount = MOCK_NOTIFICATIONS.filter((n) => !n.read).length;
 
 export default function Navbar() {
-  const { user }  = useAuth();
-  const navigate  = useNavigate();
+  const { user }   = useAuth();
+  const navigate   = useNavigate();
   const { toggle } = useSidebar();
+  const { online } = useNetworkStatus();
+  const canViewHealth = hasPermission(user.roleCode, 'system.config') ||
+                        hasPermission(user.roleCode, 'system.audit_logs');
 
   const roleConfig     = getRoleConfig(user.roleCode);
   const clearanceLevel = getClearanceLevel(user.roleCode);
@@ -29,6 +34,24 @@ export default function Navbar() {
     month:   'short',
     day:     'numeric',
   });
+
+  // Derive overall health status from observability
+  const healthReport    = observability.getReport();
+  const healthStatus    = healthReport.overallStatus;
+  const healthIndicator = !online ? 'offline'
+    : healthStatus === 'critical'  ? 'critical'
+    : healthStatus === 'degraded'  ? 'degraded'
+    : 'healthy';
+
+  const healthDot: Record<string, string> = {
+    healthy:  'bg-emerald-500',
+    degraded: 'bg-amber-500 animate-pulse',
+    critical: 'bg-rose-500  animate-pulse',
+    offline:  'bg-slate-500',
+  };
+  const healthLabel: Record<string, string> = {
+    healthy: 'All Systems Operational', degraded: 'Degraded', critical: 'Critical', offline: 'Offline',
+  };
 
   return (
     <header role="banner" className="fixed inset-x-0 top-0 z-30 lg:ml-[260px] flex h-[60px] items-center gap-3 border-b border-slate-800/60 bg-[#040810]/95 px-4 lg:px-6 backdrop-blur-md">
@@ -57,9 +80,24 @@ export default function Navbar() {
 
       <div className="flex-1" />
 
+      {/* ── System health indicator (authorized users only) ── */}
+      {canViewHealth && (
+        <button
+          type="button"
+          onClick={() => navigate('/system-health')}
+          title={`System Health: ${healthLabel[healthIndicator]}`}
+          className="hidden lg:flex items-center gap-1.5 rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 text-[10px] font-mono text-slate-500 transition hover:border-sky-500/20 hover:text-slate-300"
+          aria-label={`System Health — ${healthLabel[healthIndicator]}`}
+        >
+          <Activity className="h-3 w-3 text-slate-600" aria-hidden="true" />
+          <span className={`h-1.5 w-1.5 rounded-full ${healthDot[healthIndicator]}`} aria-hidden="true" />
+          <span className="hidden xl:inline">{healthLabel[healthIndicator]}</span>
+        </button>
+      )}
+
       {/* ── Date/Time ── */}
       <div className="hidden lg:flex items-center gap-1.5 font-mono text-[10px] text-slate-500 border-r border-slate-800/60 pr-4">
-        <Clock className="h-3 w-3" />
+        <Clock className="h-3 w-3" aria-hidden="true" />
         <span>{dateStr}</span>
       </div>
 

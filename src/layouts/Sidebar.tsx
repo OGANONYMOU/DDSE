@@ -14,24 +14,47 @@ import {
   LogOut,
   Shield,
   ChevronRight,
+  ScrollText,
+  Activity,
+  Radio,
+  Brain,
+  HeartPulse,
+  Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getClearanceLabel, getClearanceLevel, getRoleConfig } from '../lib/rbac';
+import { getClearanceLabel, getClearanceLevel, getRoleConfig, hasPermission, type Permission } from '../lib/rbac';
+import type { LucideIcon } from 'lucide-react';
 
-const NAV_ITEMS = [
-  { to: '/',              label: 'Dashboard',          icon: LayoutDashboard,  end: true },
+interface NavItem {
+  to:         string;
+  label:      string;
+  icon:       LucideIcon;
+  end?:       boolean;
+  permission?: Permission;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { to: '/',              label: 'Dashboard',          icon: LayoutDashboard, end: true },
   { to: '/projects',      label: 'Projects',           icon: FolderKanban },
   { to: '/inspections',   label: 'Inspections',        icon: ClipboardCheck },
   { to: '/safety',        label: 'Safety Assessments', icon: ShieldAlert },
   { to: '/reports',       label: 'Reports',            icon: FileBarChart2 },
   { to: '/analytics',     label: 'Analytics',          icon: BarChart3 },
   { to: '/personnel',     label: 'Personnel',          icon: Users },
-] as const;
+  // Phase 11 — Enterprise modules
+  { to: '/readiness',     label: 'Readiness',          icon: Activity,     permission: 'inspections.view_all' },
+  { to: '/broadcasts',    label: 'Broadcasts',         icon: Radio },
+  { to: '/intelligence',  label: 'Intelligence',       icon: Brain,        permission: 'inspections.view_all' },
+];
 
-const BOTTOM_ITEMS = [
-  { to: '/notifications', label: 'Notifications', icon: Bell },
-  { to: '/settings',      label: 'Settings',      icon: Settings },
-] as const;
+const BOTTOM_ITEMS: NavItem[] = [
+  { to: '/notifications',  label: 'Notifications', icon: Bell },
+  { to: '/settings',       label: 'Settings',      icon: Settings },
+  { to: '/audit-log',      label: 'Audit Log',     icon: ScrollText,  permission: 'audit.view' },
+  // Phase 12 — Platform Ecosystem
+  { to: '/system-health',  label: 'System Health', icon: HeartPulse,  permission: 'system.audit_logs' },
+  { to: '/automation',     label: 'Automation',    icon: Zap,         permission: 'system.audit_logs' },
+];
 
 export default function Sidebar() {
   const { user, onLogout } = useAuth();
@@ -84,11 +107,13 @@ export default function Sidebar() {
         <p className="mb-2 px-2 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">
           Navigation
         </p>
-        {NAV_ITEMS.map(({ to, label, icon: Icon, ...rest }) => (
+        {NAV_ITEMS.filter(({ permission }) =>
+          !permission || hasPermission(user.roleCode, permission)
+        ).map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
-            end={'end' in rest ? rest.end : undefined}
+            end={end}
             aria-label={label}
             className={({ isActive }) =>
               `group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150 ${
@@ -124,7 +149,9 @@ export default function Sidebar() {
         <p className="mb-2 px-2 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">
           System
         </p>
-        {BOTTOM_ITEMS.map(({ to, label, icon: Icon }) => (
+        {BOTTOM_ITEMS.filter(({ permission }) =>
+          !permission || hasPermission(user.roleCode, permission)
+        ).map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
