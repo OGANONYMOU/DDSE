@@ -27,6 +27,9 @@ export interface CommandBroadcast {
   expiresAt?:       number;
   readCount:        number;
   totalRecipients?: number;
+  // I-11: Acknowledgement enforcement
+  requiresAck:      boolean;
+  ackDeadlineAt?:   number;
 }
 
 export interface BroadcastDraft {
@@ -88,6 +91,7 @@ const MOCK_BROADCASTS: CommandBroadcast[] = [
     status: 'active', publishedAt: Date.now() - 1000 * 60 * 60 * 2,
     expiresAt: Date.now() + 1000 * 60 * 60 * 22,
     readCount: 8, totalRecipients: 12,
+    requiresAck: true, ackDeadlineAt: Date.now() + 1000 * 60 * 60 * 4,
   },
   {
     id: 'bc-002', subject: 'Q4 2025 Inspection Schedule Released',
@@ -96,7 +100,7 @@ const MOCK_BROADCASTS: CommandBroadcast[] = [
     targetRoles: ['inspection_officer', 'engineering_officer', 'admin'],
     authorName: 'Maj. Gen. K.O. Adebayo', authorRole: 'Commander',
     status: 'active', publishedAt: Date.now() - 1000 * 60 * 60 * 24,
-    readCount: 5, totalRecipients: 7,
+    readCount: 5, totalRecipients: 7, requiresAck: false,
   },
   {
     id: 'bc-003', subject: 'RESTRICTED: Annual Asset Inventory Exercise',
@@ -106,7 +110,8 @@ const MOCK_BROADCASTS: CommandBroadcast[] = [
     targetDirectorates: ['DESE', 'DEME', 'DQMS', 'DWE'],
     authorName: 'Col. A.D. Bello', authorRole: 'Director',
     status: 'active', publishedAt: Date.now() - 1000 * 60 * 60 * 48,
-    readCount: 3, totalRecipients: 5,
+    readCount: 3, totalRecipients: 5, requiresAck: true,
+    ackDeadlineAt: Date.now() - 1000 * 60 * 60 * 24,  // already overdue
   },
   {
     id: 'bc-004', subject: 'Holiday Period Operations Notice',
@@ -116,7 +121,7 @@ const MOCK_BROADCASTS: CommandBroadcast[] = [
     authorName: 'Admin Office', authorRole: 'admin',
     status: 'active', publishedAt: Date.now() - 1000 * 60 * 60 * 72,
     expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30,
-    readCount: 12, totalRecipients: 14,
+    readCount: 12, totalRecipients: 14, requiresAck: false,
   },
 ];
 
@@ -155,6 +160,9 @@ export async function getBroadcasts(opts: {
           publishedAt:    new Date(r.published_at).getTime(),
           expiresAt:      r.expires_at ? new Date(r.expires_at).getTime() : undefined,
           readCount:      r.read_count ?? 0,
+          // I-11: acknowledgement fields
+          requiresAck:    Boolean(r.requires_ack ?? false),
+          ackDeadlineAt:  r.ack_deadline_at ? new Date(r.ack_deadline_at).getTime() : undefined,
         }));
       }
     } catch {
@@ -194,6 +202,11 @@ export async function publishBroadcast(
       ? Date.now() + draft.expiresInHours * 60 * 60 * 1000
       : undefined,
     readCount:      0,
+    // I-11: URGENT and CRITICAL broadcasts require acknowledgement
+    requiresAck:    draft.priority === 'URGENT',
+    ackDeadlineAt:  draft.priority === 'URGENT' && draft.expiresInHours
+      ? Date.now() + Math.min(draft.expiresInHours, 4) * 60 * 60 * 1000
+      : undefined,
   };
 
   if (!supabaseMisconfigured) {

@@ -1,13 +1,15 @@
+// N-3: Global search (Cmd+K) wired into the Navbar search bar.
+
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, Search, ChevronDown, Clock, Menu, Activity } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSidebar } from '../context/SidebarContext';
 import { getClearanceLevel, getClearanceLabel, getRoleConfig, hasPermission } from '../lib/rbac';
-import { MOCK_NOTIFICATIONS } from '../lib/mock-data';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { observability } from '../lib/observability';
-
-const unreadCount = MOCK_NOTIFICATIONS.filter((n) => !n.read).length;
+import { getUnreadCount } from '../services/notificationService';
+import GlobalSearch from '../components/GlobalSearch';
 
 export default function Navbar() {
   const { user }   = useAuth();
@@ -17,30 +19,45 @@ export default function Navbar() {
   const canViewHealth = hasPermission(user.roleCode, 'system.config') ||
                         hasPermission(user.roleCode, 'system.audit_logs');
 
+  const [searchOpen,   setSearchOpen]   = useState(false);
+  const [unreadCount,  setUnreadCount]  = useState(0);
+
   const roleConfig     = getRoleConfig(user.roleCode);
   const clearanceLevel = getClearanceLevel(user.roleCode);
   const clearanceLabel = getClearanceLabel(clearanceLevel);
 
   const initials = user.fullName
-    .split(' ')
-    .slice(0, 2)
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase();
+    .split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase();
 
   const dateStr = new Date().toLocaleDateString('en-US', {
-    weekday: 'short',
-    year:    'numeric',
-    month:   'short',
-    day:     'numeric',
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
   });
 
-  // Derive overall health status from observability
+  // N-3: Keyboard shortcut Cmd+K / Ctrl+K opens global search
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen((o) => !o);
+      }
+      if (e.key === 'Escape') setSearchOpen(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Live unread notification count
+  useEffect(() => {
+    getUnreadCount().then(setUnreadCount).catch(() => {});
+    const id = setInterval(() => getUnreadCount().then(setUnreadCount).catch(() => {}), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
   const healthReport    = observability.getReport();
   const healthStatus    = healthReport.overallStatus;
   const healthIndicator = !online ? 'offline'
-    : healthStatus === 'critical'  ? 'critical'
-    : healthStatus === 'degraded'  ? 'degraded'
+    : healthStatus === 'critical' ? 'critical'
+    : healthStatus === 'degraded' ? 'degraded'
     : 'healthy';
 
   const healthDot: Record<string, string> = {
@@ -54,97 +71,89 @@ export default function Navbar() {
   };
 
   return (
-    <header role="banner" className="fixed inset-x-0 top-0 z-30 lg:ml-[260px] flex h-[60px] items-center gap-3 border-b border-slate-800/60 bg-[#040810]/95 px-4 lg:px-6 backdrop-blur-md">
+    <>
+      {/* N-3: Global search modal */}
+      {searchOpen && <GlobalSearch onClose={() => setSearchOpen(false)} />}
 
-      {/* ── Mobile hamburger ── */}
-      <button
-        type="button"
-        onClick={toggle}
-        className="lg:hidden flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800/60 bg-slate-900/40 text-slate-400 transition hover:text-slate-200 shrink-0"
-        aria-label="Toggle navigation"
-      >
-        <Menu className="h-4 w-4" />
-      </button>
+      <header role="banner" className="fixed inset-x-0 top-0 z-30 lg:ml-[260px] flex h-[60px] items-center gap-3 border-b border-slate-800/60 bg-[#040810]/95 px-4 lg:px-6 backdrop-blur-md">
 
-      {/* ── Global search ── */}
-      <div role="search" className="relative flex-1 max-w-xs hidden sm:block">
-        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" aria-hidden="true" />
-        <input
-          type="search"
-          placeholder="Search inspections, reports..."
-          aria-label="Global search"
-          readOnly
-          className="h-8 w-full rounded-lg border border-slate-800/80 bg-slate-900/60 pl-8 pr-3 text-[11px] font-mono text-slate-300 placeholder:text-slate-600 outline-none cursor-pointer transition focus:border-sky-500/40"
-        />
-      </div>
+        <button type="button" onClick={toggle}
+          className="lg:hidden flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800/60 bg-slate-900/40 text-slate-400 transition hover:text-slate-200 shrink-0"
+          aria-label="Toggle navigation">
+          <Menu className="h-4 w-4" />
+        </button>
 
-      <div className="flex-1" />
-
-      {/* ── System health indicator (authorized users only) ── */}
-      {canViewHealth && (
+        {/* N-3: Search bar opens modal */}
         <button
           type="button"
-          onClick={() => navigate('/system-health')}
-          title={`System Health: ${healthLabel[healthIndicator]}`}
-          className="hidden lg:flex items-center gap-1.5 rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 text-[10px] font-mono text-slate-500 transition hover:border-sky-500/20 hover:text-slate-300"
-          aria-label={`System Health — ${healthLabel[healthIndicator]}`}
+          role="search"
+          onClick={() => setSearchOpen(true)}
+          className="relative flex-1 max-w-xs hidden sm:flex h-8 items-center rounded-lg border border-slate-800/80 bg-slate-900/60 pl-3 pr-3 gap-2 text-[11px] font-mono text-slate-600 hover:border-sky-500/30 transition cursor-pointer"
+          aria-label="Open global search (Ctrl+K)"
         >
-          <Activity className="h-3 w-3 text-slate-600" aria-hidden="true" />
-          <span className={`h-1.5 w-1.5 rounded-full ${healthDot[healthIndicator]}`} aria-hidden="true" />
-          <span className="hidden xl:inline">{healthLabel[healthIndicator]}</span>
+          <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="flex-1 text-left">Search all modules…</span>
+          <kbd className="hidden lg:flex items-center gap-0.5 rounded border border-slate-700/60 bg-slate-800/60 px-1 py-0.5 text-[8px] font-mono text-slate-600">
+            ⌘K
+          </kbd>
         </button>
-      )}
 
-      {/* ── Date/Time ── */}
-      <div className="hidden lg:flex items-center gap-1.5 font-mono text-[10px] text-slate-500 border-r border-slate-800/60 pr-4">
-        <Clock className="h-3 w-3" aria-hidden="true" />
-        <span>{dateStr}</span>
-      </div>
+        <div className="flex-1" />
 
-      {/* ── Notifications ── */}
-      <button
-        type="button"
-        onClick={() => navigate('/notifications')}
-        className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800/60 bg-slate-900/40 text-slate-400 transition hover:border-sky-500/30 hover:text-sky-400"
-        aria-label={`Notifications — ${unreadCount} unread`}
-      >
-        <Bell className="h-3.5 w-3.5" />
-        {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-sky-500 text-[8px] font-black text-white">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
+        {/* System health */}
+        {canViewHealth && (
+          <button type="button" onClick={() => navigate('/system-health')}
+            title={`System Health: ${healthLabel[healthIndicator]}`}
+            className="hidden lg:flex items-center gap-1.5 rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 text-[10px] font-mono text-slate-500 transition hover:border-sky-500/20 hover:text-slate-300">
+            <Activity className="h-3 w-3 text-slate-600" aria-hidden="true" />
+            <span className={`h-1.5 w-1.5 rounded-full ${healthDot[healthIndicator]}`} />
+            <span className="hidden xl:inline">{healthLabel[healthIndicator]}</span>
+          </button>
         )}
-      </button>
 
-      {/* ── User Profile ── */}
-      <button
-        type="button"
-        aria-label={`User profile — ${user.fullName}`}
-        className="flex items-center gap-2.5 rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 transition hover:border-sky-500/20"
-      >
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-slate-700 text-[10px] font-black text-white">
-          {initials}
+        {/* Date/Time */}
+        <div className="hidden lg:flex items-center gap-1.5 font-mono text-[10px] text-slate-500 border-r border-slate-800/60 pr-4">
+          <Clock className="h-3 w-3" aria-hidden="true" />
+          <span>{dateStr}</span>
         </div>
 
-        <div className="hidden sm:block text-left leading-none">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-white">
-            {user.fullName.split(' ')[0]}
-          </p>
-          <div className="mt-0.5 flex items-center gap-1">
-            <span className={`text-[9px] font-black uppercase tracking-wider ${roleConfig.uiTheme.badgeText}`}>
-              {roleConfig.label}
+        {/* Notifications */}
+        <button type="button" onClick={() => navigate('/notifications')}
+          className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-slate-800/60 bg-slate-900/40 text-slate-400 transition hover:border-sky-500/30 hover:text-sky-400"
+          aria-label={`Notifications — ${unreadCount} unread`}>
+          <Bell className="h-3.5 w-3.5" />
+          {unreadCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-sky-500 text-[8px] font-black text-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
             </span>
-            <span className="text-slate-700">·</span>
-            <span className={`text-[9px] font-mono uppercase ${
-              clearanceLevel >= 5 ? 'text-yellow-400' : clearanceLevel >= 3 ? 'text-sky-400' : 'text-slate-400'
-            }`}>
-              L{clearanceLevel} {clearanceLabel}
-            </span>
+          )}
+        </button>
+
+        {/* User Profile */}
+        <button type="button" aria-label={`User profile — ${user.fullName}`}
+          className="flex items-center gap-2.5 rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 transition hover:border-sky-500/20">
+          <div className="flex h-6 w-6 items-center justify-center rounded bg-slate-700 text-[10px] font-black text-white">
+            {initials}
           </div>
-        </div>
-
-        <ChevronDown className="h-3 w-3 text-slate-500" />
-      </button>
-    </header>
+          <div className="hidden sm:block text-left leading-none">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-white">
+              {user.fullName.split(' ')[0]}
+            </p>
+            <div className="mt-0.5 flex items-center gap-1">
+              <span className={`text-[9px] font-black uppercase tracking-wider ${roleConfig.uiTheme.badgeText}`}>
+                {roleConfig.label}
+              </span>
+              <span className="text-slate-700">·</span>
+              <span className={`text-[9px] font-mono uppercase ${
+                clearanceLevel >= 5 ? 'text-yellow-400' : clearanceLevel >= 3 ? 'text-sky-400' : 'text-slate-400'
+              }`}>
+                L{clearanceLevel} {clearanceLabel}
+              </span>
+            </div>
+          </div>
+          <ChevronDown className="h-3 w-3 text-slate-500" />
+        </button>
+      </header>
+    </>
   );
 }

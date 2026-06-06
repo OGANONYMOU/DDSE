@@ -8,6 +8,26 @@ import { observability } from './lib/observability';
 import { automationEngine } from './lib/automationEngine';
 import { initWorkflowEngine } from './lib/workflowEngine';
 
+// ── N-7: PWA Service Worker registration ─────────────────────────────────────
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .then((reg) => {
+        navigator.serviceWorker.addEventListener('message', (ev) => {
+          if ((ev.data as { type?: string } | null)?.type === 'SYNC_READY') {
+            window.dispatchEvent(new Event('online'));
+          }
+        });
+        if ('periodicSync' in reg) {
+          (reg as unknown as { periodicSync: { register(t: string, o: object): Promise<void> } })
+            .periodicSync.register('ddse-draft-sync', { minInterval: 5 * 60_000 })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  });
+}
+
 // ── Phase 10 — Error capture ────────────────────────────────────────────────
 const cleanupErrorHandlers = installGlobalErrorHandlers();
 
@@ -15,8 +35,6 @@ const cleanupErrorHandlers = installGlobalErrorHandlers();
 void flushAuditQueue();
 
 // ── Phase 12 — Platform Ecosystem startup ────────────────────────────────────
-// Initialize in order: observability first (needs to capture events),
-// then workflow engine (listens to events), then automation (runs startup rules).
 observability.init();
 const cleanupWorkflows = initWorkflowEngine();
 automationEngine.init();
@@ -28,7 +46,6 @@ root.render(
   </StrictMode>
 );
 
-// Cleanup on HMR dispose (dev only)
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     cleanupErrorHandlers();

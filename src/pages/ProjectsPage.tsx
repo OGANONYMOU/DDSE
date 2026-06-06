@@ -6,17 +6,17 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { useDebounce } from '../hooks/useDebounce';
 import { usePagination } from '../hooks/usePagination';
 import PaginationBar from '../components/ui/PaginationBar';
-import { MOCK_PROJECTS, type MockProject } from '../lib/mock-data';
-import { getProjects } from '../lib/api';
+import { listProjects } from '../services/projects';
+import type { Project, ProjectStatus } from '../types/projects';
 
-const RISK_COLOR: Record<MockProject['riskLevel'], string> = {
+const RISK_COLOR: Record<Project['riskLevel'], string> = {
   LOW:      'text-emerald-400',
   MEDIUM:   'text-amber-400',
   HIGH:     'text-rose-400',
   CRITICAL: 'text-rose-300',
 };
 
-const PRIORITY_COLOR: Record<MockProject['priority'], string> = {
+const PRIORITY_COLOR: Record<Project['priority'], string> = {
   ROUTINE:   'text-slate-500',
   PRIORITY:  'text-sky-400',
   URGENT:    'text-amber-400',
@@ -26,47 +26,48 @@ const PRIORITY_COLOR: Record<MockProject['priority'], string> = {
 const progressColor = (pct: number) =>
   pct === 100 ? 'bg-emerald-500' : pct > 50 ? 'bg-sky-500' : 'bg-amber-500';
 
-function formatBudget(n: number): string {
+function formatBudget(n: number | null): string {
+  if (n == null) return '—';
   if (n >= 1_000_000_000) return `₦${(n / 1_000_000_000).toFixed(2)}B`;
   if (n >= 1_000_000)     return `₦${(n / 1_000_000).toFixed(0)}M`;
   return `₦${n.toLocaleString()}`;
 }
 
-type StatusFilter = MockProject['status'] | 'all';
+type StatusFilter = ProjectStatus | 'all';
 const STATUS_FILTERS: StatusFilter[] = ['all', 'in_progress', 'planning', 'completed', 'on_hold'];
 
 export default function ProjectsPage() {
   const navigate                        = useNavigate();
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [allProjects, setAllProjects]   = useState<MockProject[]>(MOCK_PROJECTS);
+  const [allProjects, setAllProjects]   = useState<Project[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
   const debouncedSearch                 = useDebounce(search, 250);
 
   useEffect(() => {
-    getProjects()
-      .then((data) => { if (Array.isArray(data) && data.length > 0) setAllProjects(data as MockProject[]); })
-      .catch(() => {});
-  }, []);
+    setLoading(true);
+    setError(null);
+    listProjects({
+      search: debouncedSearch || undefined,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+    })
+      .then(setAllProjects)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [debouncedSearch, statusFilter]);
 
-  const filtered = useMemo(() => allProjects.filter((p) => {
-    const q = debouncedSearch.toLowerCase();
-    const matchSearch =
-      q === '' ||
-      p.title.toLowerCase().includes(q) ||
-      p.id.toLowerCase().includes(q) ||
-      p.projectCode.toLowerCase().includes(q) ||
-      p.contractor.toLowerCase().includes(q) ||
-      p.location.toLowerCase().includes(q);
-    return matchSearch && (statusFilter === 'all' || p.status === statusFilter);
-  }), [allProjects, debouncedSearch, statusFilter]);
+  const filtered = useMemo(() => allProjects, [allProjects]);
 
   const { page, totalPages, offset, pageSize, hasPrev, hasNext, goTo, next, prev, reset } =
     usePagination({ total: filtered.length });
 
-  // Reset to page 1 when filters change
   useEffect(() => { reset(); }, [debouncedSearch, statusFilter, reset]);
 
-  const paginated = useMemo(() => filtered.slice(offset, offset + pageSize), [filtered, offset, pageSize]);
+  const paginated = useMemo(
+    () => filtered.slice(offset, offset + pageSize),
+    [filtered, offset, pageSize]
+  );
 
   const counts = {
     total:       allProjects.length,
@@ -101,10 +102,19 @@ export default function ProjectsPage() {
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-slate-800/60 bg-slate-950/70 px-4 py-3">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</p>
-            <p className={`mt-1 text-2xl font-black tabular-nums ${stat.color}`}>{stat.value}</p>
+            <p className={`mt-1 text-2xl font-black tabular-nums ${stat.color}`}>
+              {loading ? '…' : stat.value}
+            </p>
           </div>
         ))}
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 px-4 py-3 text-[11px] font-mono text-rose-400">
+          Failed to load projects: {error}
+        </div>
+      )}
 
       {/* Search + status filters */}
       <div className="flex flex-wrap items-center gap-3">
@@ -118,7 +128,6 @@ export default function ProjectsPage() {
             className="h-8 w-full rounded-lg border border-slate-800/80 bg-slate-900/60 pl-8 pr-3 text-[11px] font-mono text-slate-300 placeholder:text-slate-600 outline-none transition focus:border-sky-500/40 focus:ring-1 focus:ring-sky-500/20"
           />
         </div>
-
         <div className="flex items-center gap-1.5">
           {STATUS_FILTERS.map((s) => (
             <button
@@ -149,7 +158,12 @@ export default function ProjectsPage() {
         </div>
 
         <div className="divide-y divide-slate-800/30">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+              <p className="mt-3 text-[11px] font-mono uppercase text-slate-600">Loading projects…</p>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <FolderKanban className="h-10 w-10 text-slate-700" />
               <p className="mt-3 text-[11px] font-mono uppercase text-slate-600">
@@ -163,7 +177,6 @@ export default function ProjectsPage() {
                 onClick={() => navigate(`/projects/${project.id}`)}
                 className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.5fr)_minmax(0,1.5fr)_130px_110px_60px_60px] gap-4 items-center px-5 py-4 transition-colors hover:bg-slate-900/40 cursor-pointer"
               >
-                {/* Identity */}
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-1.5">
                     <StatusBadge status={project.status} />
@@ -173,13 +186,13 @@ export default function ProjectsPage() {
                   <p className="mt-0.5 text-[10px] font-mono text-slate-500 uppercase">{project.type}</p>
                 </div>
 
-                {/* Location + contractor */}
                 <div className="min-w-0">
                   <p className="text-[11px] text-slate-300 leading-snug">{project.location}</p>
-                  <p className="mt-0.5 text-[10px] font-mono text-slate-500 truncate">{project.contractor}</p>
+                  <p className="mt-0.5 text-[10px] font-mono text-slate-500 truncate">
+                    {project.contractor ?? 'TBD'}
+                  </p>
                 </div>
 
-                {/* Completion */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[10px] font-mono font-bold text-slate-300">
@@ -197,22 +210,19 @@ export default function ProjectsPage() {
                   </p>
                 </div>
 
-                {/* Budget */}
                 <div>
                   <p className="text-[11px] font-mono font-bold text-slate-300">
-                    {formatBudget(project.budgetNGN)}
+                    {formatBudget(project.budgetNgn)}
                   </p>
                   <p className="mt-0.5 text-[9px] font-mono text-slate-600 uppercase">
                     {project.directorateCode}
                   </p>
                 </div>
 
-                {/* Risk */}
                 <p className={`text-[10px] font-mono font-black uppercase ${RISK_COLOR[project.riskLevel]}`}>
                   {project.riskLevel}
                 </p>
 
-                {/* Priority */}
                 <p className={`text-[10px] font-mono font-black uppercase ${PRIORITY_COLOR[project.priority]}`}>
                   {project.priority}
                 </p>
@@ -227,13 +237,9 @@ export default function ProjectsPage() {
           Showing {Math.min(offset + 1, filtered.length)}–{Math.min(offset + pageSize, filtered.length)} of {filtered.length} projects
         </p>
         <PaginationBar
-          page={page}
-          totalPages={totalPages}
-          hasPrev={hasPrev}
-          hasNext={hasNext}
-          onPrev={prev}
-          onNext={next}
-          onGoTo={goTo}
+          page={page} totalPages={totalPages}
+          hasPrev={hasPrev} hasNext={hasNext}
+          onPrev={prev} onNext={next} onGoTo={goTo}
         />
       </div>
     </div>

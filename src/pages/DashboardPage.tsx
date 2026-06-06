@@ -15,7 +15,6 @@ import { useAuth } from '../context/AuthContext';
 import { getCommandCenterSummary, getPendingApprovals, approveRegistration } from '../lib/api';
 import { hasPermission } from '../lib/rbac';
 import type { DashboardSummary } from '../types/platform';
-import { MOCK_DASHBOARD_SUMMARY } from '../lib/mock-data';
 
 import PageHeader from '../components/ui/PageHeader';
 import DashboardSection from '../components/dashboard/DashboardSection';
@@ -34,7 +33,7 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     const [dashSummary, approvals] = await Promise.all([
-      (getCommandCenterSummary() as Promise<DashboardSummary>).catch(() => MOCK_DASHBOARD_SUMMARY),
+      getCommandCenterSummary() as Promise<DashboardSummary>,
       canApprove ? getPendingApprovals().catch(() => [] as Record<string, unknown>[]) : Promise.resolve([] as Record<string, unknown>[]),
     ]);
     setSummary(dashSummary);

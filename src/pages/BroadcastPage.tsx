@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Radio, Plus, Megaphone, Clock, Users, Eye,
-  AlertTriangle, ChevronDown, ChevronUp, X,
+  AlertTriangle, ChevronDown, ChevronUp, X, CheckSquare,
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -35,10 +36,14 @@ function BroadcastCard({
   broadcast,
   expanded,
   onToggle,
+  onAcknowledge,
+  acknowledged,
 }: {
-  broadcast: CommandBroadcast;
-  expanded:  boolean;
-  onToggle:  () => void;
+  broadcast:      CommandBroadcast;
+  expanded:       boolean;
+  onToggle:       () => void;
+  onAcknowledge?: () => void;
+  acknowledged?:  boolean;
 }) {
   const expired  = isExpired(broadcast);
   const readPct  = readPercentage(broadcast);
@@ -132,6 +137,32 @@ function BroadcastCard({
                 <p className="text-[10px] font-mono text-slate-600 uppercase">
                   Expires: {new Date(broadcast.expiresAt).toLocaleString()}
                 </p>
+              )}
+              {/* I-11: Acknowledgement requirement */}
+              {broadcast.requiresAck && (
+                <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${acknowledged ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'}`}>
+                  <div>
+                    <p className={`text-[10px] font-black uppercase tracking-wider ${acknowledged ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {acknowledged ? 'Acknowledged' : 'Acknowledgement Required'}
+                    </p>
+                    {broadcast.ackDeadlineAt && !acknowledged && (
+                      <p className="mt-0.5 text-[9px] font-mono text-slate-600">
+                        Deadline: {new Date(broadcast.ackDeadlineAt).toLocaleString()}
+                        {broadcast.ackDeadlineAt < Date.now() && ' — OVERDUE'}
+                      </p>
+                    )}
+                  </div>
+                  {!acknowledged && onAcknowledge && (
+                    <button
+                      type="button"
+                      onClick={onAcknowledge}
+                      className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[10px] font-black uppercase text-amber-300 transition hover:bg-amber-500/15"
+                    >
+                      <CheckSquare className="h-3.5 w-3.5" />
+                      Acknowledge
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </motion.div>
@@ -336,10 +367,12 @@ export default function BroadcastPage() {
                      hasPermission(user.roleCode, 'data.view_nationwide') ||
                      user.roleCode === 'commander' || user.roleCode === 'director';
 
-  const [broadcasts, setBroadcasts] = useState<CommandBroadcast[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [expanded,   setExpanded]   = useState<string | null>(null);
-  const [composing,  setComposing]  = useState(false);
+  const [broadcasts,   setBroadcasts]   = useState<CommandBroadcast[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [expanded,     setExpanded]     = useState<string | null>(null);
+  const [composing,    setComposing]    = useState(false);
+  // I-11: Track which broadcasts the current user has acknowledged
+  const [acknowledged, setAcknowledged] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -354,6 +387,30 @@ export default function BroadcastPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // I-11: Load existing acknowledgements for current user
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data } = await supabase.from('broadcast_acknowledgements')
+          .select('broadcast_id')
+          .eq('recipient_id', user.id)
+          .eq('status', 'acknowledged');
+        if (data) setAcknowledged(new Set(data.map((r) => String(r.broadcast_id))));
+      } catch { /* table may not exist yet */ }
+    })();
+  }, [user.id]);
+
+  async function handleAcknowledge(broadcastId: string) {
+    await supabase.from('broadcast_acknowledgements').upsert({
+      broadcast_id:     broadcastId,
+      recipient_id:     user.id,
+      acknowledged_at:  new Date().toISOString(),
+      status:           'acknowledged',
+    });
+    setAcknowledged((prev) => new Set([...prev, broadcastId]));
+    toast.success('Broadcast acknowledged.');
+  }
 
   async function handlePublish(draft: BroadcastDraft) {
     const result = await publishBroadcast(draft, {
@@ -408,6 +465,8 @@ export default function BroadcastPage() {
                   broadcast={b}
                   expanded={expanded === b.id}
                   onToggle={() => setExpanded(expanded === b.id ? null : b.id)}
+                  onAcknowledge={() => void handleAcknowledge(b.id)}
+                  acknowledged={acknowledged.has(b.id)}
                 />
               ))}
             </div>
@@ -427,6 +486,8 @@ export default function BroadcastPage() {
                   broadcast={b}
                   expanded={expanded === b.id}
                   onToggle={() => setExpanded(expanded === b.id ? null : b.id)}
+                  onAcknowledge={() => void handleAcknowledge(b.id)}
+                  acknowledged={acknowledged.has(b.id)}
                 />
               ))}
             </div>

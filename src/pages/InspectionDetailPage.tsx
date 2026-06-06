@@ -1,11 +1,52 @@
-import { useState, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ClipboardCheck, CheckCircle2 } from 'lucide-react';
+// C-1: No mock dependencies. C-8: responded_by attributed server-side.
+// I-5: Offline draft support. I-7: Score persisted server-side. I-15: Template version shown.
 
-import { MOCK_INSPECTIONS, MOCK_INSPECTION_TEMPLATES } from '../lib/mock-data';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, ClipboardCheck, CheckCircle2, Tag } from 'lucide-react';
+import { toast } from 'sonner';
+
+import { getInspectionDetail, saveInspectionResponse } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { saveDraft, syncDrafts } from '../lib/offlineSync';
+import type { InspectionDetail, InspectionSummary } from '../types/platform';
 import PageHeader from '../components/ui/PageHeader';
 import StatusBadge from '../components/ui/StatusBadge';
-import QuestionRenderer, { type QuestionResponse } from '../components/inspection/QuestionRenderer';
+import OfflineDraftBanner from '../components/ui/OfflineDraftBanner';
+import QuestionRenderer, { type QuestionResponse, type QuestionType } from '../components/inspection/QuestionRenderer';
+
+function mapResponseType(raw: string): QuestionType {
+  switch (raw) {
+    case 'yes_no':    return 'boolean';
+    case 'score_5':   return 'rating';
+    case 'narrative': return 'text';
+    case 'checklist': return 'select';
+    default:          return (raw as QuestionType) in ['boolean','rating','text','risk','select'] ? raw as QuestionType : 'text';
+  }
+}
+
+function seedResponse(responseType: string, value: unknown): QuestionResponse | undefined {
+  if (value == null || value === '') return undefined;
+  const type = mapResponseType(responseType);
+  switch (type) {
+    case 'boolean': {
+      const v = String(value).toLowerCase();
+      const mapped = v === 'yes' ? 'yes' : v === 'no' ? 'no' : 'na';
+      return { type: 'boolean', value: mapped };
+    }
+    case 'rating':
+      return { type: 'rating', value: Number(value) };
+    case 'text':
+      return { type: 'text', value: String(value) };
+    case 'risk': {
+      const v = String(value).toUpperCase();
+      return { type: 'risk', value: v as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' };
+    }
+    default:
+      return { type: 'select', value: String(value) };
+  }
+}
 
 type Responses = Record<string, QuestionResponse>;
 
@@ -30,21 +71,17 @@ function scoreFromResponses(responses: Responses, totalWeight: number): number {
 }
 
 function ScoreRing({ score }: { score: number }) {
-  const r = 36;
-  const circ = 2 * Math.PI * r;
+  const r      = 36;
+  const circ   = 2 * Math.PI * r;
   const offset = circ * (1 - score / 100);
-  const color = score >= 80 ? '#10b981' : score >= 60 ? '#38bdf8' : score >= 40 ? '#f59e0b' : '#f43f5e';
+  const color  = score >= 80 ? '#10b981' : score >= 60 ? '#38bdf8' : score >= 40 ? '#f59e0b' : '#f43f5e';
 
   return (
     <div className="relative flex items-center justify-center">
       <svg width={96} height={96} className="-rotate-90">
         <circle cx={48} cy={48} r={r} fill="none" stroke="#1e293b" strokeWidth={8} />
-        <circle
-          cx={48} cy={48} r={r} fill="none"
-          stroke={color} strokeWidth={8}
-          strokeDasharray={circ}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
+        <circle cx={48} cy={48} r={r} fill="none" stroke={color} strokeWidth={8}
+          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
           style={{ transition: 'stroke-dashoffset 0.4s ease' }}
         />
       </svg>
@@ -59,104 +96,173 @@ function ScoreRing({ score }: { score: number }) {
 export default function InspectionDetailPage() {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { online } = useNetworkStatus();
 
-  const inspection = useMemo(
-    () => MOCK_INSPECTIONS.find((i) => i.id === id) ?? null,
-    [id]
-  );
+  const [detail,          setDetail]          = useState<InspectionDetail | null>(null);
+  const [loading,         setLoading]         = useState(true);
+  const [responses,       setResponses]       = useState<Responses>({});
+  const [activeSectionId, setActiveSectionId] = useState<string>('');
 
-  const template = useMemo(
-    () => (inspection ? (MOCK_INSPECTION_TEMPLATES[inspection.moduleCode] ?? null) : null),
-    [inspection]
-  );
-
-  const [responses,      setResponses]      = useState<Responses>({});
-  const [activeSectionId, setActiveSectionId] = useState<string>(
-    template?.sections[0]?.id ?? ''
-  );
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    getInspectionDetail(id)
+      .then((d) => {
+        const inspDetail = d as InspectionDetail;
+        setDetail(inspDetail);
+        if (inspDetail.sections.length > 0) {
+          setActiveSectionId(inspDetail.sections[0]._id);
+        }
+        // Seed responses from existing DB data with correct type mapping (C-8)
+        const existing: Responses = {};
+        for (const section of inspDetail.sections) {
+          for (const item of section.items) {
+            if (item.response?.responseValue != null) {
+              const seeded = seedResponse(item.responseType, item.response.responseValue);
+              if (seeded) existing[item._id] = seeded;
+            }
+          }
+        }
+        setResponses(existing);
+      })
+      .catch((err: Error) => toast.error(err.message))
+      .finally(() => setLoading(false));
+  }, [id]);
 
   const activeSection = useMemo(
-    () => template?.sections.find((s) => s.id === activeSectionId) ?? null,
-    [template, activeSectionId]
+    () => detail?.sections.find((s) => s._id === activeSectionId) ?? null,
+    [detail, activeSectionId]
   );
+
+  const allSections = detail?.sections ?? [];
 
   const totalWeight = useMemo(() => {
-    if (!template) return 1;
-    return template.sections.reduce((acc, s) =>
-      acc + s.questions.reduce((a, q) => a + (q.weight > 0 ? 1 : 0), 0), 0
+    return allSections.reduce((acc, s) =>
+      acc + s.items.reduce((a, q) => a + (q.weight > 0 ? 1 : 0), 0), 0
     );
-  }, [template]);
+  }, [allSections]);
 
-  const liveScore = useMemo(
-    () => scoreFromResponses(responses, totalWeight),
-    [responses, totalWeight]
-  );
-
+  const liveScore    = useMemo(() => scoreFromResponses(responses, totalWeight), [responses, totalWeight]);
   const answeredCount = useMemo(() => Object.keys(responses).length, [responses]);
-  const totalQuestions = useMemo(() => {
-    if (!template) return 0;
-    return template.sections.reduce((acc, s) => acc + s.questions.length, 0);
-  }, [template]);
+  const totalQuestions = useMemo(() => allSections.reduce((acc, s) => acc + s.items.length, 0), [allSections]);
 
-  const handleResponse = useCallback((questionId: string, response: QuestionResponse) => {
-    setResponses((prev) => ({ ...prev, [questionId]: response }));
-  }, []);
+  // C-8: save response with respondent attribution. I-5: save draft offline when not connected.
+  const handleResponse = useCallback(async (questionId: string, response: QuestionResponse) => {
+    const next = { ...responses, [questionId]: response };
+    setResponses(next);
+
+    if (!id) return;
+
+    if (!online) {
+      // I-5: Save to IndexedDB when offline
+      await saveDraft({
+        type:    'inspection',
+        entityId: id,
+        title:   `Inspection ${id} — offline response`,
+        data:    { inspectionId: id, sectionId: activeSectionId, questionId, response },
+      }).catch(() => {});
+      return;
+    }
+
+    try {
+      await saveInspectionResponse({
+        inspectionId:  id,
+        sectionId:     activeSectionId,
+        itemId:        questionId,
+        responseValue: response.value,
+        // I-7: numeric_score fed to server-side scoring engine
+        numericScore:  response.type === 'rating' ? Number(response.value ?? 0) : response.value === 'yes' ? 1 : 0,
+        immediateRisk: false,
+      });
+    } catch {
+      // Non-fatal — local state is current
+    }
+  }, [id, activeSectionId, online, responses]);
 
   const sectionProgress = useCallback((sectionId: string): number => {
-    const section = template?.sections.find((s) => s.id === sectionId);
+    const section = allSections.find((s) => s._id === sectionId);
     if (!section) return 0;
-    const answered = section.questions.filter((q) => responses[q.id] !== undefined).length;
-    return section.questions.length === 0 ? 0 : Math.round((answered / section.questions.length) * 100);
-  }, [template, responses]);
+    const answered = section.items.filter((q) => responses[q._id] !== undefined).length;
+    return section.items.length === 0 ? 0 : Math.round((answered / section.items.length) * 100);
+  }, [allSections, responses]);
 
-  if (!inspection) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+        <p className="mt-3 text-[11px] font-mono uppercase text-slate-600">Loading inspection…</p>
+      </div>
+    );
+  }
+
+  if (!detail) {
     return (
       <div className="flex flex-col items-center justify-center py-32 text-center">
         <ClipboardCheck className="h-12 w-12 text-slate-700" />
-        <h3 className="mt-4 text-sm font-bold uppercase tracking-widest text-slate-500">
-          Inspection Not Found
-        </h3>
-        <p className="mt-1 text-[11px] font-mono text-slate-700 uppercase">
-          {id} does not match any inspection record
-        </p>
-        <button
-          type="button"
-          onClick={() => navigate('/inspections')}
-          className="mt-6 flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Inspections
+        <h3 className="mt-4 text-sm font-bold uppercase tracking-widest text-slate-500">Inspection Not Found</h3>
+        <p className="mt-1 text-[11px] font-mono text-slate-700 uppercase">{id} does not match any inspection record</p>
+        <button type="button" onClick={() => navigate('/inspections')}
+          className="mt-6 flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15">
+          <ArrowLeft className="h-3.5 w-3.5" />Back to Inspections
         </button>
       </div>
     );
   }
 
+  const { inspection } = detail;
+
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
+      {/* I-5: Offline draft banner */}
+      <OfflineDraftBanner
+        onSync={async (draft) => {
+          const d = draft.data as { inspectionId: string; sectionId: string; questionId: string; response: QuestionResponse };
+          await saveInspectionResponse({
+            inspectionId:  d.inspectionId,
+            sectionId:     d.sectionId,
+            itemId:        d.questionId,
+            responseValue: d.response.value,
+            numericScore:  d.response.type === 'rating' ? Number(d.response.value ?? 0) : d.response.value === 'yes' ? 1 : 0,
+            immediateRisk: false,
+          });
+          return { entityId: d.inspectionId };
+        }}
+      />
+
       <div className="space-y-3">
-        <button
-          type="button"
-          onClick={() => navigate('/inspections')}
-          className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300"
-        >
-          <ArrowLeft className="h-3 w-3" />
-          Inspections
+        <button type="button" onClick={() => navigate('/inspections')}
+          className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300">
+          <ArrowLeft className="h-3 w-3" />Inspections
         </button>
         <PageHeader
           title={inspection.title}
-          subtitle={`${inspection.projectCode} · ${inspection.moduleCode}`}
-          action={<StatusBadge status={inspection.status} size="md" />}
+          subtitle={`${inspection.moduleCode}`}
+          action={
+            <div className="flex items-center gap-2">
+              {/* I-15: Template version badge */}
+              {(() => {
+                const tv = (inspection as Record<string, unknown>).templateVersion;
+                if (!tv) return null;
+                return (
+                  <span className="inline-flex items-center gap-1 rounded border border-slate-700/60 bg-slate-800/30 px-2 py-0.5 text-[9px] font-mono text-slate-500">
+                    <Tag className="h-2.5 w-2.5" />
+                    v{String(tv)}
+                  </span>
+                );
+              })()}
+              <StatusBadge status={inspection.status} size="md" />
+            </div>
+          }
         />
       </div>
 
-      {/* Info strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { label: 'Project',    value: inspection.projectName },
-          { label: 'Inspector',  value: inspection.inspector },
-          { label: 'Risk Level', value: inspection.riskLevel, extraClass: RISK_COLOR[inspection.riskLevel] },
-          { label: 'Updated',    value: inspection.updatedAt },
+          { label: 'Module',     value: inspection.moduleCode },
+          { label: 'Risk Level', value: inspection.riskLevel, extraClass: RISK_COLOR[inspection.riskLevel] ?? '' },
+          { label: 'Score',      value: `${inspection.scoreOverall}%` },
+          { label: 'Status',     value: inspection.status },
         ].map((item) => (
           <div key={item.label} className="rounded-xl border border-slate-800/60 bg-slate-950/70 px-4 py-3">
             <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">{item.label}</p>
@@ -167,56 +273,36 @@ export default function InspectionDetailPage() {
         ))}
       </div>
 
-      {template ? (
+      {allSections.length > 0 ? (
         <div className="grid gap-5 lg:grid-cols-12">
-          {/* Left — score + section nav */}
           <div className="lg:col-span-4 space-y-4">
             <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
-              {/* Score ring */}
               <div className="flex flex-col items-center gap-3 pb-5 border-b border-slate-800/40">
                 <ScoreRing score={liveScore} />
-                <div className="text-center">
-                  <p className="text-[9px] font-mono uppercase text-slate-600">
-                    {answeredCount} / {totalQuestions} questions answered
-                  </p>
-                </div>
+                <p className="text-[9px] font-mono uppercase text-slate-600">
+                  {answeredCount} / {totalQuestions} questions answered
+                </p>
               </div>
 
-              {/* Section navigation */}
               <div className="pt-4 space-y-1.5">
-                <p className="mb-3 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">
-                  Sections
-                </p>
-                {template.sections.map((section) => {
-                  const pct = sectionProgress(section.id);
-                  const isActive = activeSectionId === section.id;
+                <p className="mb-3 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">Sections</p>
+                {allSections.map((section) => {
+                  const pct = sectionProgress(section._id);
+                  const isActive = activeSectionId === section._id;
                   return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => setActiveSectionId(section.id)}
+                    <button key={section._id} type="button" onClick={() => setActiveSectionId(section._id)}
                       className={`w-full rounded-lg border px-3 py-2.5 text-left transition-all ${
-                        isActive
-                          ? 'border-sky-500/30 bg-sky-950/60'
-                          : 'border-slate-800/60 bg-slate-900/20 hover:border-slate-700/60'
-                      }`}
-                    >
+                        isActive ? 'border-sky-500/30 bg-sky-950/60' : 'border-slate-800/60 bg-slate-900/20 hover:border-slate-700/60'
+                      }`}>
                       <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <p className="text-[10px] font-bold text-slate-300 leading-snug line-clamp-1">
-                          {section.title}
-                        </p>
-                        {pct === 100 && (
-                          <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400" />
-                        )}
+                        <p className="text-[10px] font-bold text-slate-300 leading-snug line-clamp-1">{section.title}</p>
+                        {pct === 100 && <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400" />}
                       </div>
                       <div className="h-1 w-full overflow-hidden rounded-full bg-slate-800/60">
-                        <div
-                          className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-sky-500'}`}
-                          style={{ width: `${pct}%` }}
-                        />
+                        <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : 'bg-sky-500'}`} style={{ width: `${pct}%` }} />
                       </div>
                       <p className="mt-1 text-[9px] font-mono text-slate-600">
-                        {section.questions.filter((q) => responses[q.id] !== undefined).length}/{section.questions.length} answered
+                        {section.items.filter((q) => responses[q._id] !== undefined).length}/{section.items.length} answered
                       </p>
                     </button>
                   );
@@ -225,55 +311,48 @@ export default function InspectionDetailPage() {
             </div>
           </div>
 
-          {/* Right — active section questions */}
           <div className="lg:col-span-8">
             {activeSection ? (
               <div className="space-y-4">
                 <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 px-5 py-4">
-                  <h3 className="text-[12px] font-black uppercase tracking-wider text-white">
-                    {activeSection.title}
-                  </h3>
+                  <h3 className="text-[12px] font-black uppercase tracking-wider text-white">{activeSection.title}</h3>
                   <p className="mt-0.5 text-[10px] font-mono text-slate-500 uppercase">
-                    {activeSection.questions.length} question{activeSection.questions.length !== 1 ? 's' : ''} · {activeSection.questions.filter((q) => q.required).length} required
+                    {activeSection.items.length} question{activeSection.items.length !== 1 ? 's' : ''}
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  {activeSection.questions.map((question) => (
+                  {activeSection.items.map((question) => (
                     <QuestionRenderer
-                      key={question.id}
-                      question={question}
-                      response={responses[question.id]}
-                      onChange={(r) => handleResponse(question.id, r)}
+                      key={question._id}
+                      question={{
+                        id:       question._id,
+                        code:     question.code,
+                        prompt:   question.prompt,
+                        type:     mapResponseType(question.responseType),
+                        weight:   question.weight,
+                        required: true,
+                      }}
+                      response={responses[question._id]}
+                      onChange={(r) => void handleResponse(question._id, r)}
                     />
                   ))}
                 </div>
 
-                {/* Section navigation buttons */}
                 <div className="flex items-center justify-between pt-2">
                   {(() => {
-                    const idx = template.sections.findIndex((s) => s.id === activeSectionId);
-                    const prev = template.sections[idx - 1];
-                    const next = template.sections[idx + 1];
+                    const idx  = allSections.findIndex((s) => s._id === activeSectionId);
+                    const prev = allSections[idx - 1];
+                    const next = allSections[idx + 1];
                     return (
                       <>
-                        <button
-                          type="button"
-                          disabled={!prev}
-                          onClick={() => prev && setActiveSectionId(prev.id)}
-                          className="rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
+                        <button type="button" disabled={!prev} onClick={() => prev && setActiveSectionId(prev._id)}
+                          className="rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed">
                           ← Previous
                         </button>
-                        <span className="text-[10px] font-mono text-slate-600">
-                          {template.sections.findIndex((s) => s.id === activeSectionId) + 1} / {template.sections.length}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={!next}
-                          onClick={() => next && setActiveSectionId(next.id)}
-                          className="rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15 disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
+                        <span className="text-[10px] font-mono text-slate-600">{idx + 1} / {allSections.length}</span>
+                        <button type="button" disabled={!next} onClick={() => next && setActiveSectionId(next._id)}
+                          className="rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15 disabled:opacity-30 disabled:cursor-not-allowed">
                           Next →
                         </button>
                       </>
@@ -291,9 +370,7 @@ export default function InspectionDetailPage() {
       ) : (
         <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-slate-800/60 bg-slate-950/40 text-center gap-2">
           <ClipboardCheck className="h-8 w-8 text-slate-700" />
-          <p className="text-[11px] font-mono uppercase text-slate-600">
-            No template available for module {inspection.moduleCode}
-          </p>
+          <p className="text-[11px] font-mono uppercase text-slate-600">No sections available for this inspection</p>
         </div>
       )}
     </div>

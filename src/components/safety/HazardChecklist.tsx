@@ -1,8 +1,8 @@
 import { CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
-import type { MockHazardCheckItem } from '../../lib/mock-data';
+import type { HazardCheckItem } from '../../types/safety';
 
 interface Props {
-  items:    MockHazardCheckItem[];
+  items:     HazardCheckItem[];
   editable?: boolean;
   onChange?: (id: string, value: boolean | null) => void;
 }
@@ -10,7 +10,7 @@ interface Props {
 function StatusIcon({ v }: { v: boolean | null }) {
   if (v === true)  return <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />;
   if (v === false) return <XCircle      className="h-4 w-4 text-rose-400 shrink-0" />;
-  return              <MinusCircle  className="h-4 w-4 text-slate-500 shrink-0" />;
+  return                 <MinusCircle  className="h-4 w-4 text-slate-500 shrink-0" />;
 }
 
 export default function HazardChecklist({ items, editable = false, onChange }: Props) {
@@ -20,7 +20,6 @@ export default function HazardChecklist({ items, editable = false, onChange }: P
 
   return (
     <div className="space-y-3">
-      {/* Summary counts */}
       <div className="flex items-center gap-4 text-[9px] font-mono font-black uppercase">
         <span className="text-emerald-400">{pass} Pass</span>
         <span className="text-rose-400">{fail} Fail</span>

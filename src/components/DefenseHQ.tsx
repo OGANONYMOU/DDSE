@@ -1,9 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Shield, ShieldAlert, ShieldCheck, Crosshair, Radar, Globe, Radio, Cpu, 
+import {
+  Shield, ShieldAlert, ShieldCheck, Crosshair, Radar, Globe, Radio, Cpu,
   Layers, UserCheck, AlertTriangle, Play, Pause, ChevronRight, Activity, Zap
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+interface SectorReadiness {
+  code:              string;
+  name:              string;
+  alertLevel:        string;
+  avgScore:          number;
+  activeInspections: number;
+}
+
+function scoreToStatus(score: number): string {
+  if (score >= 90) return 'Optimal';
+  if (score >= 75) return 'Active';
+  if (score >= 60) return 'Guarded';
+  if (score >= 45) return 'Warning';
+  return 'Critical';
+}
 
 interface DefenseHQProps {
   user: {
@@ -53,12 +70,33 @@ export default function DefenseHQ({ user, metrics, recentActivity, alerts }: Def
     };
   }, []);
 
-  const sectors = {
-    SECTOR_ALPHA: { name: 'Sector Alpha (Training Command)', status: 'Optimal', readiness: 94, alert: 'Normal' },
-    SECTOR_BRAVO: { name: 'Sector Bravo (Central Armoury)', status: 'Guarded', readiness: 87, alert: 'Standby' },
-    SECTOR_CHARLIE: { name: 'Sector Charlie (Strategic Engineering)', status: 'Active', readiness: 91, alert: 'Normal' },
-    SECTOR_DELTA: { name: 'Sector Delta (Hazard Containment)', status: 'Warning', readiness: 68, alert: 'High Risk' },
-  };
+  // I-4: Live sector readiness from DB instead of hardcoded objects
+  const [sectors, setSectors] = useState<Record<string, SectorReadiness>>({
+    SECTOR_ALPHA:   { code: 'SECTOR_ALPHA',   name: 'Sector Alpha',   alertLevel: 'Normal', avgScore: 0, activeInspections: 0 },
+    SECTOR_BRAVO:   { code: 'SECTOR_BRAVO',   name: 'Sector Bravo',   alertLevel: 'Normal', avgScore: 0, activeInspections: 0 },
+    SECTOR_CHARLIE: { code: 'SECTOR_CHARLIE', name: 'Sector Charlie', alertLevel: 'Normal', avgScore: 0, activeInspections: 0 },
+    SECTOR_DELTA:   { code: 'SECTOR_DELTA',   name: 'Sector Delta',   alertLevel: 'Normal', avgScore: 0, activeInspections: 0 },
+  });
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { data } = await supabase.from('sector_readiness').select('*');
+        if (!data || data.length === 0) return;
+        const map: Record<string, SectorReadiness> = {};
+        for (const row of data) {
+          map[String(row.code)] = {
+            code:              String(row.code),
+            name:              String(row.name),
+            alertLevel:        String(row.alert_level ?? 'Normal'),
+            avgScore:          Number(row.avg_score ?? 0),
+            activeInspections: Number(row.active_inspections ?? 0),
+          };
+        }
+        setSectors(map);
+      } catch { /* view may not exist yet — keep defaults */ }
+    })();
+  }, []);
 
   const getDefconColor = (level: number) => {
     switch (level) {
@@ -262,10 +300,10 @@ export default function DefenseHQ({ user, metrics, recentActivity, alerts }: Def
                 <span>SECTOR_STATUS</span>
                 <span className="text-sky-400">ONLINE</span>
               </p>
-              <p className="pt-1">TARGET: {sectors[activeSector as keyof typeof sectors].name}</p>
-              <p>POSTURE: <span className="text-white font-bold">{sectors[activeSector as keyof typeof sectors].status}</span></p>
-              <p>READINESS: <span className="text-sky-400 font-bold">{sectors[activeSector as keyof typeof sectors].readiness}%</span></p>
-              <p>THREAT LVL: <span className={activeSector === 'SECTOR_DELTA' ? 'text-rose-400 font-bold' : 'text-slate-400'}>{sectors[activeSector as keyof typeof sectors].alert}</span></p>
+              <p className="pt-1">TARGET: {sectors[activeSector]?.name ?? activeSector}</p>
+              <p>POSTURE: <span className="text-white font-bold">{scoreToStatus(sectors[activeSector]?.avgScore ?? 0)}</span></p>
+              <p>READINESS: <span className="text-sky-400 font-bold">{sectors[activeSector]?.avgScore ?? 0}%</span></p>
+              <p>THREAT LVL: <span className={sectors[activeSector]?.alertLevel === 'High Risk' || sectors[activeSector]?.alertLevel === 'Critical' ? 'text-rose-400 font-bold' : 'text-slate-400'}>{sectors[activeSector]?.alertLevel ?? 'Normal'}</span></p>
             </div>
 
             {/* Compass HUD */}

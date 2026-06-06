@@ -1,24 +1,13 @@
-// DDSE AI-Assisted Operational Intelligence Engine
-// Heuristic-based analysis (no external API required).
-// Generates actionable insights from inspection scores, hazard patterns,
-// project trends, and compliance history.
+// I-12: AI insights now derived from real Supabase data, not mock arrays.
+// Heuristic analysis runs on live inspection, hazard, project, and report data.
 
-import {
-  MOCK_INSPECTIONS,
-  MOCK_HAZARD_ASSESSMENTS,
-  MOCK_PROJECTS,
-  MOCK_REPORTS,
-} from '../lib/mock-data';
+import { supabase } from '../lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type InsightType =
-  | 'risk_prediction'
-  | 'recommendation'
-  | 'anomaly'
-  | 'trend'
-  | 'performance'
-  | 'compliance_gap';
+  | 'risk_prediction' | 'recommendation' | 'anomaly'
+  | 'trend' | 'performance' | 'compliance_gap';
 
 export type InsightPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
@@ -29,7 +18,7 @@ export interface OperationalInsight {
   title:       string;
   summary:     string;
   detail:      string;
-  confidence:  number;   // 0–100 — how certain the heuristic is
+  confidence:  number;
   module:      string;
   dataPoints:  string[];
   action?:     string;
@@ -39,56 +28,85 @@ export interface OperationalInsight {
 
 export interface InsightReport {
   insights:     OperationalInsight[];
-  riskScore:    number;          // aggregate risk index 0–100
+  riskScore:    number;
   anomalyCount: number;
   topPriority:  InsightPriority;
   generatedAt:  number;
 }
 
-// ─── Heuristic analyzers ─────────────────────────────────────────────────────
+// ─── Data fetcher ─────────────────────────────────────────────────────────────
 
-function analyzeHazardPatterns(): OperationalInsight[] {
+interface LiveData {
+  hazards:    Array<{ id: string; risk_level: string; category: string; hazard_title: string; project_code: string | null; workflow_status: string }>;
+  inspections:Array<{ id: string; status: string; final_score: number | null; risk_band: string | null; directorate_code: string }>;
+  projects:   Array<{ id: string; status: string; title: string; completion_percent: number; risk_level: string }>;
+  reports:    Array<{ id: string; title: string; status: string; type: string }>;
+}
+
+async function fetchLiveData(): Promise<LiveData> {
+  const [hazResult, insResult, projResult, repResult] = await Promise.all([
+    supabase.from('hazard_assessments')
+      .select('id, risk_level, category, hazard_title, project_code, workflow_status')
+      .neq('workflow_status', 'closed')
+      .limit(200),
+    supabase.from('inspections')
+      .select('id, status, final_score, risk_band, directorate_code')
+      .neq('status', 'draft')
+      .limit(200),
+    supabase.from('projects')
+      .select('id, status, title, completion_percent, risk_level')
+      .neq('status', 'cancelled')
+      .limit(200),
+    supabase.from('reports')
+      .select('id, title, status, type')
+      .limit(200),
+  ]);
+
+  return {
+    hazards:     hazResult.data  ?? [],
+    inspections: insResult.data  ?? [],
+    projects:    projResult.data ?? [],
+    reports:     repResult.data  ?? [],
+  };
+}
+
+// ─── Heuristic analyzers (same logic, real data) ─────────────────────────────
+
+function analyzeHazardPatterns(data: LiveData): OperationalInsight[] {
   const results: OperationalInsight[] = [];
-  const criticals = MOCK_HAZARD_ASSESSMENTS.filter((h) => h.riskLevel === 'CRITICAL');
+  const criticals = data.hazards.filter((h) => h.risk_level === 'CRITICAL');
   const byCategory: Record<string, number> = {};
-
-  for (const h of MOCK_HAZARD_ASSESSMENTS) {
+  for (const h of data.hazards) {
     byCategory[h.category] = (byCategory[h.category] ?? 0) + 1;
   }
+  const recurring = Object.entries(byCategory)
+    .filter(([, c]) => c >= 2)
+    .sort(([, a], [, b]) => b - a);
 
-  const recurringCategories = Object.entries(byCategory)
-    .filter(([, count]) => count >= 2)
-    .map(([cat]) => cat);
-
-  if (recurringCategories.length > 0) {
+  if (recurring.length > 0) {
+    const [topCat, topCount] = recurring[0];
     results.push({
-      id:          'insight-recurring-hazard',
-      type:        'risk_prediction',
-      priority:    'HIGH',
-      title:       'Recurring Hazard Pattern Detected',
-      summary:     `${recurringCategories[0]} hazards appearing repeatedly across projects`,
-      detail:      `Hazard category "${recurringCategories[0]}" has been flagged in ${byCategory[recurringCategories[0]]} separate assessments. This pattern suggests a systemic issue rather than isolated incidents.`,
-      confidence:  82,
-      module:      'Safety',
-      dataPoints:  [`${MOCK_HAZARD_ASSESSMENTS.length} total assessments analyzed`, `Category frequency: ${JSON.stringify(byCategory)}`],
-      action:      `Conduct a root-cause review of all ${recurringCategories[0]} findings and issue a standing order to contractors`,
+      id: 'insight-recurring-hazard', type: 'risk_prediction', priority: 'HIGH',
+      title:   'Recurring Hazard Pattern Detected',
+      summary: `${topCat} hazards appearing in ${topCount} assessments`,
+      detail:  `Category "${topCat}" has been flagged ${topCount} times — indicates a systemic issue rather than isolated incidents. Immediate root-cause review recommended.`,
+      confidence: 82, module: 'Safety',
+      dataPoints: [`${data.hazards.length} live assessments analyzed`, ...recurring.slice(0, 3).map(([c, n]) => `${c}: ${n} occurrences`)],
+      action:  `Conduct root-cause review of all ${topCat} findings and issue standing order to contractors`,
       generatedAt: Date.now(),
     });
   }
 
   if (criticals.length > 0) {
     results.push({
-      id:          'insight-critical-hazards',
-      type:        'anomaly',
-      priority:    'CRITICAL',
-      title:       `${criticals.length} Critical Hazard${criticals.length > 1 ? 's' : ''} Unmitigated`,
-      summary:     'Critical-risk hazards remain unresolved — potential stop-work condition',
-      detail:      `Projects affected: ${[...new Set(criticals.map((h) => h.projectName))].join(', ')}. These represent the highest risk tier and require immediate corrective action before site work continues.`,
-      confidence:  95,
-      module:      'Safety',
-      dataPoints:  criticals.map((h) => `${h.hazardTitle} (${h.projectCode})`),
-      action:      'Issue stop-work notification and escalate to Director level',
-      entityId:    criticals[0].id,
+      id: 'insight-critical-hazards', type: 'anomaly', priority: 'CRITICAL',
+      title:   `${criticals.length} Critical Hazard${criticals.length > 1 ? 's' : ''} Unmitigated`,
+      summary: 'Critical-risk hazards remain open — potential stop-work condition',
+      detail:  `${criticals.length} CRITICAL hazards are still active. These require immediate corrective action before site work continues.`,
+      confidence: 95, module: 'Safety',
+      dataPoints: criticals.slice(0, 5).map((h) => `${h.hazard_title}${h.project_code ? ` (${h.project_code})` : ''}`),
+      action:  'Issue stop-work notification and escalate to Director level',
+      entityId: criticals[0].id,
       generatedAt: Date.now(),
     });
   }
@@ -96,54 +114,35 @@ function analyzeHazardPatterns(): OperationalInsight[] {
   return results;
 }
 
-function analyzeComplianceTrends(): OperationalInsight[] {
+function analyzeComplianceTrends(data: LiveData): OperationalInsight[] {
   const results: OperationalInsight[] = [];
+  const scored = data.inspections.filter((i) => i.final_score != null);
 
-  const byProject: Record<string, number[]> = {};
-  for (const insp of MOCK_INSPECTIONS) {
-    if (insp.status === 'approved' || insp.status === 'submitted') {
-      (byProject[insp.projectId] ??= []).push(insp.score);
-    }
-  }
+  if (scored.length === 0) return results;
 
-  for (const [projectId, scores] of Object.entries(byProject)) {
-    if (scores.length < 2) continue;
-    const delta = scores[scores.length - 1] - scores[0];
-    if (delta < -10) {
-      const proj = MOCK_PROJECTS.find((p) => p.id === projectId);
-      results.push({
-        id:          `insight-compliance-decline-${projectId}`,
-        type:        'trend',
-        priority:    'MEDIUM',
-        title:       `Declining Inspection Scores — ${proj?.title ?? projectId}`,
-        summary:     `Compliance score dropped ${Math.abs(Math.round(delta))} points over ${scores.length} inspections`,
-        detail:      `Scores over time: ${scores.join(' → ')}. A consistent downward trend may indicate contractor fatigue, material substitution, or supervision gaps.`,
-        confidence:  74,
-        module:      'Compliance',
-        dataPoints:  scores.map((s, i) => `Inspection ${i + 1}: ${s}`),
-        action:      'Schedule an unannounced interim inspection and review contractor management',
-        entityId:    projectId,
-        generatedAt: Date.now(),
-      });
-    }
-  }
+  const avgScore = scored.reduce((s, i) => s + (i.final_score ?? 0), 0) / scored.length;
+  const failing  = scored.filter((i) => (i.final_score ?? 0) < 60);
+  const fRate    = Math.round((failing.length / scored.length) * 100);
 
-  const avgScore = MOCK_INSPECTIONS
-    .filter((i) => i.status === 'approved')
-    .reduce((s, i) => s + i.score, 0) / (MOCK_INSPECTIONS.filter((i) => i.status === 'approved').length || 1);
-
-  if (avgScore < 75) {
+  if (fRate > 20) {
     results.push({
-      id:          'insight-low-avg-compliance',
-      type:        'compliance_gap',
-      priority:    'HIGH',
-      title:       'Platform-Wide Compliance Below Target',
-      summary:     `Average inspection score is ${Math.round(avgScore)} — below the 75% operational threshold`,
-      detail:      `The target baseline for operational readiness is 75%. Current platform average of ${Math.round(avgScore)} indicates systemic compliance challenges that require command-level attention.`,
-      confidence:  90,
-      module:      'Compliance',
-      dataPoints:  [`Platform average: ${Math.round(avgScore)}`, 'Target: 75', `Assessments reviewed: ${MOCK_INSPECTIONS.length}`],
-      action:      'Convene a compliance task force and review inspection officer training standards',
+      id: 'insight-low-compliance', type: 'compliance_gap', priority: fRate > 40 ? 'CRITICAL' : 'HIGH',
+      title:   `${fRate}% Inspection Failure Rate Detected`,
+      summary: `${failing.length} of ${scored.length} inspections scoring below 60`,
+      detail:  `Average platform compliance score is ${avgScore.toFixed(1)}%. ${failing.length} inspections have scored in the F band (< 60). Systemic quality control improvements are required.`,
+      confidence: 90, module: 'Inspections',
+      dataPoints: [`Average score: ${avgScore.toFixed(1)}`, `Failing: ${failing.length} / ${scored.length}`, `Failure rate: ${fRate}%`],
+      action:  'Review low-scoring inspections and initiate targeted inspector training',
+      generatedAt: Date.now(),
+    });
+  } else if (avgScore > 80) {
+    results.push({
+      id: 'insight-good-compliance', type: 'performance', priority: 'LOW',
+      title:   `Strong Compliance: ${avgScore.toFixed(0)}% Average Score`,
+      summary: 'Platform inspection scores are tracking above target threshold',
+      detail:  `The current average inspection score of ${avgScore.toFixed(1)} exceeds the 75-point target. Maintain current quality assurance practices.`,
+      confidence: 88, module: 'Inspections',
+      dataPoints: [`${scored.length} scored inspections`, `Target: 75`, `Actual: ${avgScore.toFixed(1)}`],
       generatedAt: Date.now(),
     });
   }
@@ -151,42 +150,47 @@ function analyzeComplianceTrends(): OperationalInsight[] {
   return results;
 }
 
-function analyzeProjectHealth(): OperationalInsight[] {
+function analyzeProjectHealth(data: LiveData): OperationalInsight[] {
   const results: OperationalInsight[] = [];
-
-  const stalled = MOCK_PROJECTS.filter(
-    (p) => p.status === 'in_progress' && p.completionPercent < 25
-  );
+  const stalled = data.projects.filter((p) => p.status === 'in_progress' && p.completion_percent < 20);
+  const onHold  = data.projects.filter((p) => p.status === 'on_hold');
+  const critRisk = data.projects.filter((p) => p.risk_level === 'CRITICAL');
 
   if (stalled.length > 0) {
     results.push({
-      id:          'insight-stalled-projects',
-      type:        'risk_prediction',
-      priority:    'MEDIUM',
-      title:       `${stalled.length} Project${stalled.length > 1 ? 's' : ''} at Risk of Delay`,
-      summary:     'Active projects with less than 25% completion — potential timeline slippage',
-      detail:      `Projects: ${stalled.map((p) => p.title).join(', ')}. At current pace, these projects risk missing their target completion dates. Early intervention typically reduces delay duration by 40%.`,
-      confidence:  68,
-      module:      'Projects',
-      dataPoints:  stalled.map((p) => `${p.title}: ${p.completionPercent}%`),
-      action:      'Schedule a project acceleration meeting with contractor and site engineer',
+      id: 'insight-stalled-projects', type: 'risk_prediction', priority: 'MEDIUM',
+      title:   `${stalled.length} Project${stalled.length > 1 ? 's' : ''} Stalled at Early Stage`,
+      summary: 'Projects in-progress but below 20% completion may indicate mobilisation delays',
+      detail:  `${stalled.length} active project${stalled.length > 1 ? 's' : ''} remain below 20% completion. Early-stage stalling often signals procurement delays, site access issues, or funding holds.`,
+      confidence: 75, module: 'Projects',
+      dataPoints: stalled.map((p) => `${p.title} (${p.completion_percent}%)`),
+      action:  'Review programme schedules and identify blockers with project managers',
       generatedAt: Date.now(),
     });
   }
 
-  const onHold = MOCK_PROJECTS.filter((p) => p.status === 'on_hold');
+  if (critRisk.length > 0) {
+    results.push({
+      id: 'insight-critical-risk-projects', type: 'anomaly', priority: 'HIGH',
+      title:   `${critRisk.length} Project${critRisk.length > 1 ? 's' : ''} at Critical Risk Level`,
+      summary: 'Projects flagged CRITICAL require immediate risk mitigation',
+      detail:  `These projects carry CRITICAL risk ratings: ${critRisk.map((p) => p.title).join(', ')}. Risk must be addressed before milestone sign-off can proceed.`,
+      confidence: 85, module: 'Projects',
+      dataPoints: critRisk.map((p) => p.title),
+      action:  'Convene risk review board and update project risk registers',
+      generatedAt: Date.now(),
+    });
+  }
+
   if (onHold.length > 0) {
     results.push({
-      id:          'insight-on-hold-projects',
-      type:        'performance',
-      priority:    'MEDIUM',
-      title:       `${onHold.length} Project${onHold.length > 1 ? 's' : ''} Currently Suspended`,
-      summary:     'On-hold projects represent idle infrastructure investment',
-      detail:      `Suspended projects: ${onHold.map((p) => p.title).join(', ')}. Prolonged suspension increases mobilisation costs and risks site deterioration.`,
-      confidence:  80,
-      module:      'Projects',
-      dataPoints:  onHold.map((p) => p.title),
-      action:      'Review suspension reasons and issue a resumption timeline to command',
+      id: 'insight-on-hold', type: 'performance', priority: 'MEDIUM',
+      title:   `${onHold.length} Project${onHold.length > 1 ? 's' : ''} on Hold`,
+      summary: 'Suspended projects represent tied capital and programme risk',
+      detail:  `${onHold.map((p) => p.title).join(', ')} ${onHold.length === 1 ? 'is' : 'are'} currently on hold. Each month of suspension increases the risk of programme slippage and cost escalation.`,
+      confidence: 80, module: 'Projects',
+      dataPoints: onHold.map((p) => p.title),
+      action:  'Resolve blocking issues and establish resumption plan with contractors',
       generatedAt: Date.now(),
     });
   }
@@ -194,44 +198,19 @@ function analyzeProjectHealth(): OperationalInsight[] {
   return results;
 }
 
-function analyzeReportQueue(): OperationalInsight[] {
+function analyzeReportQueue(data: LiveData): OperationalInsight[] {
   const results: OperationalInsight[] = [];
+  const pending = data.reports.filter((r) => r.status === 'pending_review');
 
-  const pendingReports = MOCK_REPORTS.filter((r) => r.status === 'pending_review');
-  if (pendingReports.length > 2) {
+  if (pending.length > 2) {
     results.push({
-      id:          'insight-report-backlog',
-      type:        'performance',
-      priority:    'LOW',
-      title:       'Report Review Backlog Building',
-      summary:     `${pendingReports.length} reports awaiting review — may delay approval chains`,
-      detail:      `A backlog of ${pendingReports.length} pending reports can create downstream delays in project closeout, safety certification, and financial release. Target review turnaround is 72 hours.`,
-      confidence:  85,
-      module:      'Reports',
-      dataPoints:  pendingReports.map((r) => r.title),
-      action:      'Assign additional reviewers or escalate the oldest pending reports',
-      generatedAt: Date.now(),
-    });
-  }
-
-  return results;
-}
-
-function generatePositiveInsights(): OperationalInsight[] {
-  const completedProjects = MOCK_PROJECTS.filter((p) => p.status === 'completed');
-  const results: OperationalInsight[] = [];
-
-  if (completedProjects.length > 0) {
-    results.push({
-      id:          'insight-completed-projects',
-      type:        'performance',
-      priority:    'LOW',
-      title:       `${completedProjects.length} Project${completedProjects.length > 1 ? 's' : ''} Successfully Completed`,
-      summary:     'Positive operational performance — completion rate tracking ahead of regional average',
-      detail:      `Completed projects: ${completedProjects.map((p) => p.title).join(', ')}. This represents successful delivery of infrastructure assets to the command.`,
-      confidence:  100,
-      module:      'Projects',
-      dataPoints:  completedProjects.map((p) => p.title),
+      id: 'insight-report-backlog', type: 'performance', priority: 'LOW',
+      title:   'Report Review Backlog Building',
+      summary: `${pending.length} reports awaiting review`,
+      detail:  `${pending.length} reports are pending review. Backlogs can delay project closeout, safety certification, and financial release. Target review turnaround is 72 hours.`,
+      confidence: 85, module: 'Reports',
+      dataPoints: pending.slice(0, 5).map((r) => r.title),
+      action:  'Assign additional reviewers or escalate the oldest pending reports',
       generatedAt: Date.now(),
     });
   }
@@ -245,50 +224,37 @@ const PRIORITY_ORDER: Record<InsightPriority, number> = {
   CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3,
 };
 
-export function generateInsightReport(): InsightReport {
+// Cache: insights are valid for 5 minutes
+let _cache:   InsightReport | null = null;
+let _cacheAt: number               = 0;
+const TTL = 5 * 60_000;
+
+export async function generateInsightReport(): Promise<InsightReport> {
+  const data = await fetchLiveData();
+
   const insights: OperationalInsight[] = [
-    ...analyzeHazardPatterns(),
-    ...analyzeComplianceTrends(),
-    ...analyzeProjectHealth(),
-    ...analyzeReportQueue(),
-    ...generatePositiveInsights(),
+    ...analyzeHazardPatterns(data),
+    ...analyzeComplianceTrends(data),
+    ...analyzeProjectHealth(data),
+    ...analyzeReportQueue(data),
   ].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
 
   const anomalyCount = insights.filter((i) => i.type === 'anomaly').length;
   const criticals    = insights.filter((i) => i.priority === 'CRITICAL').length;
   const highs        = insights.filter((i) => i.priority === 'HIGH').length;
+  const riskScore    = Math.min(100, criticals * 25 + highs * 10 + anomalyCount * 15);
+  const topPriority: InsightPriority = criticals > 0 ? 'CRITICAL' : highs > 0 ? 'HIGH'
+    : insights.some((i) => i.priority === 'MEDIUM') ? 'MEDIUM' : 'LOW';
 
-  const riskScore = Math.min(100,
-    criticals * 25 +
-    highs     * 10 +
-    anomalyCount * 15
-  );
-
-  const topPriority: InsightPriority =
-    criticals > 0 ? 'CRITICAL' :
-    highs     > 0 ? 'HIGH'     :
-    insights.some((i) => i.priority === 'MEDIUM') ? 'MEDIUM' : 'LOW';
-
-  return {
-    insights,
-    riskScore,
-    anomalyCount,
-    topPriority,
-    generatedAt: Date.now(),
-  };
+  const report: InsightReport = { insights, riskScore, anomalyCount, topPriority, generatedAt: Date.now() };
+  _cache   = report;
+  _cacheAt = Date.now();
+  return report;
 }
 
-// Memoized — valid for 5 minutes
-let _cache:   InsightReport | null = null;
-let _cacheAt: number               = 0;
-const TTL = 5 * 60_000;
-
-export function getInsightReport(): InsightReport {
-  if (!_cache || Date.now() - _cacheAt > TTL) {
-    _cache   = generateInsightReport();
-    _cacheAt = Date.now();
-  }
-  return _cache;
+export async function getInsightReport(): Promise<InsightReport> {
+  if (_cache && Date.now() - _cacheAt < TTL) return _cache;
+  return generateInsightReport();
 }
 
 export function invalidateInsightCache(): void {

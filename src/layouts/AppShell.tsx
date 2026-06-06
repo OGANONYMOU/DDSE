@@ -1,5 +1,5 @@
 import { Outlet } from 'react-router-dom';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext, useAuth } from '../context/AuthContext';
 import { SidebarProvider, useSidebar } from '../context/SidebarContext';
 import type { PlatformUser } from '../types/platform';
 import Sidebar from './Sidebar';
@@ -17,6 +17,7 @@ function ShellInner({ onLogout }: { onLogout: () => Promise<void> | void }) {
   const { isOpen, close } = useSidebar();
   const { warningVisible, secondsLeft, extendSession, dismissWarning } =
     useSessionTimeout(() => void onLogout());
+  const { user } = useAuth();
 
   return (
     <div className="min-h-screen bg-[#03040f] text-white">
@@ -65,6 +66,7 @@ function ShellInner({ onLogout }: { onLogout: () => Promise<void> | void }) {
       {warningVisible && (
         <SessionTimeoutModal
           secondsLeft={secondsLeft}
+          clearanceLevel={user.clearanceLevel ?? 1}
           onExtend={extendSession}
           onLogout={() => { dismissWarning(); void onLogout(); }}
         />

@@ -1,21 +1,21 @@
 import { CheckCircle2, Circle, Clock, AlertCircle } from 'lucide-react';
-import type { MockProject, MockMilestone } from '../../lib/mock-data';
+import type { Project, ProjectMilestone, MilestoneStatus } from '../../types/projects';
 
-const MILESTONE_ICON: Record<MockMilestone['status'], React.ElementType> = {
+const MILESTONE_ICON: Record<MilestoneStatus, React.ElementType> = {
   completed:   CheckCircle2,
   in_progress: Clock,
   upcoming:    Circle,
   delayed:     AlertCircle,
 };
 
-const MILESTONE_COLOR: Record<MockMilestone['status'], string> = {
+const MILESTONE_COLOR: Record<MilestoneStatus, string> = {
   completed:   'text-emerald-500',
   in_progress: 'text-sky-400',
   upcoming:    'text-slate-600',
   delayed:     'text-amber-400',
 };
 
-const MILESTONE_LABEL: Record<MockMilestone['status'], string> = {
+const MILESTONE_LABEL: Record<MilestoneStatus, string> = {
   completed:   'Done',
   in_progress: 'Active',
   upcoming:    'Upcoming',
@@ -26,8 +26,8 @@ const progressColor = (pct: number) =>
   pct === 100 ? 'bg-emerald-500' : pct > 50 ? 'bg-sky-500' : 'bg-amber-500';
 
 interface Props {
-  project: MockProject;
-  milestones: MockMilestone[];
+  project:    Project;
+  milestones: ProjectMilestone[];
 }
 
 export default function ProgressTracker({ project, milestones }: Props) {
@@ -35,14 +35,10 @@ export default function ProgressTracker({ project, milestones }: Props) {
 
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
-      {/* Header */}
       <div className="border-b border-slate-800/40 pb-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
-          Progress & Milestones
-        </p>
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Progress & Milestones</p>
       </div>
 
-      {/* Completion bar */}
       <div>
         <div className="flex items-baseline justify-between mb-2">
           <span className="text-[10px] font-mono text-slate-500 uppercase">Completion</span>
@@ -56,7 +52,6 @@ export default function ProgressTracker({ project, milestones }: Props) {
         </div>
       </div>
 
-      {/* Milestones */}
       {milestones.length > 0 && (
         <div className="space-y-0 divide-y divide-slate-800/30">
           {milestones.map((m) => {
@@ -70,7 +65,7 @@ export default function ProgressTracker({ project, milestones }: Props) {
                     {m.title}
                   </p>
                   <p className="mt-0.5 text-[9px] font-mono text-slate-600">
-                    {m.completedDate ?? m.targetDate}
+                    {m.completedDate ?? m.targetDate ?? '—'}
                   </p>
                 </div>
                 <span className={`shrink-0 text-[9px] font-black uppercase ${color}`}>

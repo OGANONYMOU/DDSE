@@ -1,20 +1,20 @@
-import type { MockCorrectiveAction } from '../../lib/mock-data';
+import type { HazardCorrectiveAction } from '../../types/safety';
 
-const URGENCY_COLOR: Record<MockCorrectiveAction['urgency'], string> = {
+const URGENCY_COLOR: Record<HazardCorrectiveAction['urgency'], string> = {
   IMMEDIATE: 'text-rose-300 border-rose-400/50 bg-rose-400/10',
   HIGH:      'text-rose-400 border-rose-500/30 bg-rose-500/10',
   MEDIUM:    'text-amber-400 border-amber-500/30 bg-amber-500/10',
   LOW:       'text-slate-400 border-slate-600/60 bg-slate-800/30',
 };
 
-const STATUS_COLOR: Record<MockCorrectiveAction['status'], string> = {
+const STATUS_COLOR: Record<HazardCorrectiveAction['status'], string> = {
   pending:     'text-amber-400',
   in_progress: 'text-sky-400',
   resolved:    'text-emerald-400',
 };
 
 interface Props {
-  actions: MockCorrectiveAction[];
+  actions: HazardCorrectiveAction[];
 }
 
 export default function CorrectiveActionCard({ actions }: Props) {
@@ -42,9 +42,21 @@ export default function CorrectiveActionCard({ actions }: Props) {
           <p className="text-[12px] text-slate-200 leading-relaxed">{action.recommendation}</p>
 
           <div className="mt-3 flex items-center justify-between border-t border-slate-800/40 pt-3">
-            <p className="text-[9px] font-mono text-slate-500 uppercase">{action.department}</p>
-            <p className="text-[9px] font-mono text-slate-600">Due: {action.dueDate}</p>
+            <p className="text-[9px] font-mono text-slate-500 uppercase">{action.department ?? '—'}</p>
+            <p className="text-[9px] font-mono text-slate-600">
+              Due: {action.dueDate ?? '—'}
+            </p>
           </div>
+
+          {/* C-9: Show verification status if resolved */}
+          {action.status === 'resolved' && action.verifiedBy && (
+            <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+              <span className="text-[9px] font-black uppercase text-emerald-400">Verified</span>
+              {action.verifiedAt && (
+                <span className="text-[9px] font-mono text-slate-600">{action.verifiedAt.split('T')[0]}</span>
+              )}
+            </div>
+          )}
         </div>
       ))}
     </div>

@@ -2,11 +2,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, FileBarChart2, Download, Printer, FileSpreadsheet } from 'lucide-react';
 import { getReport } from '../services/reports';
-import { getReportById } from '../lib/api';
-import type { MockReport } from '../lib/mock-data';
+import type { Report } from '../types/reports';
 import PageHeader from '../components/ui/PageHeader';
 import DashboardSection from '../components/dashboard/DashboardSection';
 import { CLASSIFICATION_COLORS } from '../constants/app';
+import { quickPrint, type ClassificationLevel } from '../lib/pdfExport';
+import { useAuth } from '../context/AuthContext';
 
 const STATUS_STYLE: Record<string, string> = {
   draft:          'border-slate-700/60 bg-slate-800/30 text-slate-400',
@@ -26,48 +27,60 @@ const SEVERITY_COLOR: Record<string, string> = {
 export default function ReportsDetailPage() {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [report, setReport] = useState<MockReport | null>(id ? getReport(id) : null);
+  const { user } = useAuth();
+  const [report,  setReport]  = useState<Report | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    getReportById(id)
-      .then((data) => { if (data) setReport(data as MockReport); })
-      .catch(() => {});
+    setLoading(true);
+    setError(null);
+    getReport(id)
+      .then(setReport)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [id]);
 
-  if (!report) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+        <p className="mt-3 text-[11px] font-mono uppercase text-slate-600">Loading report…</p>
+      </div>
+    );
+  }
+
+  if (error || !report) {
     return (
       <div className="flex flex-col items-center justify-center py-32 text-center">
         <FileBarChart2 className="h-12 w-12 text-slate-700" />
-        <h3 className="mt-4 text-sm font-bold uppercase tracking-widest text-slate-500">Report Not Found</h3>
-        <p className="mt-1 text-[11px] font-mono text-slate-700 uppercase">{id} does not match any report</p>
-        <button
-          type="button"
-          onClick={() => navigate('/reports')}
-          className="mt-6 flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Reports
+        <h3 className="mt-4 text-sm font-bold uppercase tracking-widest text-slate-500">
+          {error ? 'Failed to load report' : 'Report Not Found'}
+        </h3>
+        <p className="mt-1 text-[11px] font-mono text-slate-700 uppercase">
+          {error ?? `${id} does not match any report`}
+        </p>
+        <button type="button" onClick={() => navigate('/reports')}
+          className="mt-6 flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15">
+          <ArrowLeft className="h-3.5 w-3.5" />Back to Reports
         </button>
       </div>
     );
   }
 
+  const findings = report.findings ?? [];
+
   return (
     <div className="space-y-8">
-      {/* Breadcrumb */}
       <div className="space-y-3">
-        <button
-          type="button"
-          onClick={() => navigate('/reports')}
-          className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300"
-        >
-          <ArrowLeft className="h-3 w-3" />
-          Reports
+        <button type="button" onClick={() => navigate('/reports')}
+          className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300">
+          <ArrowLeft className="h-3 w-3" />Reports
         </button>
         <PageHeader
           title={report.title}
-          subtitle={`${report.id} · ${report.type}`}
+          subtitle={`${report.type}`}
           action={
             <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-[11px] font-black uppercase tracking-wider ${STATUS_STYLE[report.status]}`}>
               {report.status.replace('_', ' ')}
@@ -76,18 +89,15 @@ export default function ReportsDetailPage() {
         />
       </div>
 
-      {/* Section A — Report Header */}
       <DashboardSection title="Report Header" subtitle="Identification, classification and authority">
         <div className="grid gap-4 lg:grid-cols-2">
-          {/* Meta fields */}
           <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 space-y-4">
             {[
-              { label: 'Report ID',        value: report.id },
-              { label: 'Report Type',      value: report.type },
-              { label: 'Directorate',      value: report.directorateCode },
-              { label: 'Generated By',     value: report.generatedBy },
-              { label: 'Date Created',     value: report.createdAt },
-              { label: 'Last Updated',     value: report.updatedAt },
+              { label: 'Report Type',  value: report.type },
+              { label: 'Directorate', value: report.directorateCode },
+              { label: 'Generated By',value: report.generatedByName ?? report.generatedBy },
+              { label: 'Date Created', value: report.createdAt.split('T')[0] },
+              { label: 'Last Updated', value: report.updatedAt.split('T')[0] },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between gap-4 border-b border-slate-800/30 pb-3 last:border-0 last:pb-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0">{row.label}</p>
@@ -97,7 +107,6 @@ export default function ReportsDetailPage() {
           </div>
 
           <div className="space-y-3">
-            {/* Classification */}
             <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">Classification</p>
@@ -105,50 +114,43 @@ export default function ReportsDetailPage() {
                   {report.classification}
                 </span>
               </div>
-              {report.approvedBy && (
+              {report.approvedByName && (
                 <div className="flex items-center justify-between border-t border-slate-800/40 pt-4">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">Approved By</p>
-                  <p className="text-[11px] font-mono text-slate-300">{report.approvedBy}</p>
+                  <p className="text-[11px] font-mono text-slate-300">{report.approvedByName}</p>
                 </div>
               )}
               {report.approvedAt && (
                 <div className="flex items-center justify-between">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">Approval Date</p>
-                  <p className="text-[11px] font-mono text-slate-300">{report.approvedAt}</p>
+                  <p className="text-[11px] font-mono text-slate-300">{report.approvedAt.split('T')[0]}</p>
                 </div>
               )}
             </div>
 
-            {/* Linked project */}
             {report.projectName && (
-              <div
-                onClick={() => navigate(`/projects/${report.projectId}`)}
-                className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 cursor-pointer transition hover:bg-slate-900/40"
-              >
+              <div onClick={() => navigate(`/projects/${report.projectId}`)}
+                className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 cursor-pointer transition hover:bg-slate-900/40">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-1">Linked Project</p>
                 <p className="text-[13px] font-bold text-white leading-snug">{report.projectName}</p>
                 <p className="mt-0.5 text-[10px] font-mono text-slate-500">{report.projectCode}</p>
               </div>
             )}
 
-            {/* Export actions */}
             <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-3">Export</p>
               <div className="flex flex-wrap gap-2">
-                {[
-                  { label: 'Export PDF',    icon: Download        },
-                  { label: 'Export Excel',  icon: FileSpreadsheet },
-                  { label: 'Print Report',  icon: Printer         },
-                ].map(({ label, icon: Icon }) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300"
-                  >
-                    <Icon className="h-3 w-3" />
-                    {label}
+                {[{ label: 'Export PDF', icon: Download }, { label: 'Export Excel', icon: FileSpreadsheet }].map(({ label, icon: Icon }) => (
+                  <button key={label} type="button" className="flex items-center gap-1.5 rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300">
+                    <Icon className="h-3 w-3" />{label}
                   </button>
                 ))}
+                {/* N-4: Real print with classification banner */}
+                <button type="button"
+                  onClick={() => report && quickPrint(report.title, report.classification as ClassificationLevel, user.fullName)}
+                  className="flex items-center gap-1.5 rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15">
+                  <Printer className="h-3 w-3" />Print / PDF
+                </button>
               </div>
               <p className="mt-2 text-[9px] font-mono text-slate-700">Export integration pending</p>
             </div>
@@ -156,51 +158,37 @@ export default function ReportsDetailPage() {
         </div>
       </DashboardSection>
 
-      {/* Section B — Executive Summary */}
-      <DashboardSection title="Executive Summary" subtitle="High-level assessment and context">
-        <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
-          <p className="text-[13px] text-slate-300 leading-relaxed">{report.executiveSummary}</p>
-        </div>
-      </DashboardSection>
+      {report.executiveSummary && (
+        <DashboardSection title="Executive Summary" subtitle="High-level assessment and context">
+          <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
+            <p className="text-[13px] text-slate-300 leading-relaxed">{report.executiveSummary}</p>
+          </div>
+        </DashboardSection>
+      )}
 
-      {/* Section C — Key Findings */}
-      {report.findings.length > 0 && (
-        <DashboardSection
-          title="Key Findings"
-          subtitle={`${report.findings.length} finding${report.findings.length !== 1 ? 's' : ''} identified`}
-        >
+      {findings.length > 0 && (
+        <DashboardSection title="Key Findings" subtitle={`${findings.length} finding${findings.length !== 1 ? 's' : ''} identified`}>
           <div className="space-y-3">
-            {report.findings.map((f) => (
-              <div
-                key={f.id}
-                className={`rounded-xl border p-5 ${
-                  f.severity === 'CRITICAL' || f.severity === 'HIGH'
-                    ? 'border-rose-500/15 bg-rose-950/10'
-                    : f.severity === 'MEDIUM'
-                    ? 'border-amber-500/10 bg-slate-950/70'
-                    : 'border-slate-800/40 bg-slate-950/50'
-                }`}
-              >
+            {findings.map((f) => (
+              <div key={f.id} className={`rounded-xl border p-5 ${
+                f.severity === 'CRITICAL' || f.severity === 'HIGH'
+                  ? 'border-rose-500/15 bg-rose-950/10' : f.severity === 'MEDIUM'
+                  ? 'border-amber-500/10 bg-slate-950/70' : 'border-slate-800/40 bg-slate-950/50'
+              }`}>
                 <div className="flex items-center gap-3 mb-2">
-                  <span className={`text-[9px] font-black uppercase tracking-wider ${SEVERITY_COLOR[f.severity]}`}>
-                    {f.severity}
-                  </span>
+                  <span className={`text-[9px] font-black uppercase tracking-wider ${SEVERITY_COLOR[f.severity]}`}>{f.severity}</span>
                   <span className="text-[9px] font-mono text-slate-600 uppercase">{f.category}</span>
                 </div>
                 <p className="text-[12px] text-slate-200 leading-relaxed">{f.description}</p>
-                <p className="mt-2 text-[11px] font-mono text-slate-500 italic">→ {f.recommendation}</p>
+                {f.recommendation && <p className="mt-2 text-[11px] font-mono text-slate-500 italic">→ {f.recommendation}</p>}
               </div>
             ))}
           </div>
         </DashboardSection>
       )}
 
-      {/* Section D — Safety Findings */}
       {report.safetyFindings.length > 0 && (
-        <DashboardSection
-          title="Safety Findings"
-          subtitle={`${report.safetyFindings.length} safety observation${report.safetyFindings.length !== 1 ? 's' : ''}`}
-        >
+        <DashboardSection title="Safety Findings" subtitle={`${report.safetyFindings.length} safety observation${report.safetyFindings.length !== 1 ? 's' : ''}`}>
           <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 space-y-3">
             {report.safetyFindings.map((sf, i) => (
               <div key={i} className="flex items-start gap-3 border-b border-slate-800/30 pb-3 last:border-0 last:pb-0">
@@ -212,12 +200,8 @@ export default function ReportsDetailPage() {
         </DashboardSection>
       )}
 
-      {/* Section E — Recommendations */}
       {report.recommendations.length > 0 && (
-        <DashboardSection
-          title="Recommendations"
-          subtitle={`${report.recommendations.length} corrective recommendation${report.recommendations.length !== 1 ? 's' : ''}`}
-        >
+        <DashboardSection title="Recommendations" subtitle={`${report.recommendations.length} corrective recommendation${report.recommendations.length !== 1 ? 's' : ''}`}>
           <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 space-y-3">
             {report.recommendations.map((rec, i) => (
               <div key={i} className="flex items-start gap-3 border-b border-slate-800/30 pb-3 last:border-0 last:pb-0">
@@ -229,13 +213,12 @@ export default function ReportsDetailPage() {
         </DashboardSection>
       )}
 
-      {/* Section F — Approvals & Signatures */}
       <DashboardSection title="Approvals & Signatures" subtitle="Authority chain and sign-off records">
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            { label: 'Prepared By',    value: report.generatedBy, date: report.createdAt },
-            { label: 'Reviewed By',    value: report.approvedBy ?? '—',  date: report.approvedAt ?? 'Pending' },
-            { label: 'Authorised By',  value: report.status === 'approved' ? (report.approvedBy ?? '—') : '—', date: report.status === 'approved' ? (report.approvedAt ?? '—') : 'Pending' },
+            { label: 'Prepared By',   value: report.generatedByName ?? report.generatedBy, date: report.createdAt.split('T')[0] },
+            { label: 'Reviewed By',   value: report.approvedByName ?? '—', date: report.approvedAt?.split('T')[0] ?? 'Pending' },
+            { label: 'Authorised By', value: report.status === 'approved' ? (report.approvedByName ?? '—') : '—', date: report.status === 'approved' ? (report.approvedAt?.split('T')[0] ?? '—') : 'Pending' },
           ].map((sig) => (
             <div key={sig.label} className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-3">{sig.label}</p>

@@ -786,36 +786,38 @@ export async function requestPasswordResetOTP(payload: {
   serviceNumber: string;
   phoneNumber:   string;
 }): Promise<void> {
+  // C-10: Apply client-side rate limit as a UX guard (not security).
+  // Real enforcement happens server-side in the edge function via otp_rate_limits table.
   const otpLimit = checkOtpRequestLimit(payload.phoneNumber);
   if (!otpLimit.allowed) {
     throw new Error(`Too many OTP requests. Try again in ${formatRetryTime(otpLimit.retryAfterSeconds)}.`);
   }
 
-  // Client-side pre-check: verify service_number + phone_number match before
-  // calling the edge function, so we can give a specific error immediately.
-  const { data, error } = await supabase
-    .from('personnel')
-    .select('status, phone_number')
+  // Client-side pre-check: anti-enumeration — give the same generic error
+  // regardless of whether the service number exists or the phone matches.
+  // The server-side edge function does the authoritative check.
+  const { data } = await supabase
+    .from('user_profiles')
+    .select('status')
     .eq('service_number', payload.serviceNumber)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
-    throw new Error('Service number not found. Verify your credentials.');
+  if (!data) {
+    // Anti-enumeration: don't reveal whether the account exists.
+    // Delay response to mitigate timing attacks.
+    await new Promise((r) => setTimeout(r, 500));
+    throw new Error('If this service number is registered, an OTP has been sent to the associated phone number.');
   }
+  if (data.status === 'pending')   throw new Error('Account pending approval. Contact your administrator.');
+  if (data.status === 'suspended') throw new Error('Account suspended. Contact your administrator.');
 
-  const storedDigits  = data.phone_number.replace(/\D/g, '');
-  const enteredDigits = payload.phoneNumber.replace(/\D/g, '');
-  if (storedDigits !== enteredDigits) {
-    throw new Error('Phone number does not match your account records.');
-  }
-  if (data.status === 'pending') {
-    throw new Error('Account pending approval. Contact your administrator.');
-  }
-  if (data.status === 'suspended') {
-    throw new Error('Account suspended. Contact your administrator.');
-  }
-
-  // Delegate OTP generation + SMS dispatch to the edge function.
+  // Delegate OTP generation + SMS dispatch + server-side rate limit enforcement
+  // to the edge function. The edge function:
+  //   1. Checks otp_rate_limits table (max 3 per 10min per phone)
+  //   2. Locks the record if limit exceeded (locked_until)
+  //   3. Records request_ip and request_device for abuse detection
+  //   4. Generates and stores the OTP hash
+  //   5. Dispatches SMS
   const response = await fetch(`${SUPABASE_URL}/functions/v1/request-password-reset`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -827,7 +829,8 @@ export async function requestPasswordResetOTP(payload: {
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'OTP request failed.' }));
-    throw new Error(err.error || 'Failed to send OTP. Please try again.');
+    // Return same message for rate limited and other errors (anti-enumeration)
+    throw new Error(err.error || 'If this service number is registered, an OTP has been sent.');
   }
 }
 
@@ -929,18 +932,21 @@ export async function getInspectionDetail(inspectionId: string) {
 }
 
 export async function saveInspectionResponse(payload: {
-  inspectionId: string;
-  sectionId: string;
-  itemId: string;
-  responseValue: unknown;
-  numericScore: number;
-  severity?: string;
-  immediateRisk: boolean;
-  remarks?: string;
+  inspectionId:     string;
+  sectionId:        string;
+  itemId:           string;
+  responseValue:    unknown;
+  numericScore:     number;
+  severity?:        string;
+  immediateRisk:    boolean;
+  remarks?:         string;
+  // C-8: respondent attribution — the edge function reads auth.uid() server-side
+  // and writes responded_by + responded_at + submission_source automatically.
+  // No client-supplied userId accepted (prevents spoofing).
 }) {
   return callEdgeFunction('save-inspection-response', {
     method: 'POST',
-    body: payload,
+    body:   { ...payload, submissionSource: 'web' },
   });
 }
 

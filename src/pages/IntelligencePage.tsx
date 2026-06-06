@@ -162,17 +162,21 @@ export default function IntelligencePage() {
                     hasPermission(user.roleCode, 'inspections.view_all') ||
                     hasPermission(user.roleCode, 'audit.view');
 
-  const [insights,   setInsights]   = useState<ReturnType<typeof getInsightReport> | null>(null);
+  const [insights,   setInsights]   = useState<Awaited<ReturnType<typeof getInsightReport>> | null>(null);
   const [analytics,  setAnalytics]  = useState<AnalyticsSummary | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [activeTab,  setActiveTab]  = useState<'insights' | 'contractors' | 'hazards' | 'trends'>('insights');
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       invalidateInsightCache();
-      setInsights(getInsightReport());
-      setAnalytics(getAnalyticsSummary());
+      const [report, summary] = await Promise.all([
+        getInsightReport(),
+        Promise.resolve(getAnalyticsSummary()),
+      ]);
+      setInsights(report);
+      setAnalytics(summary);
     } catch {
       toast.error('Could not generate intelligence report.');
     } finally {
@@ -180,7 +184,7 @@ export default function IntelligencePage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   if (!canView) {
     return <div className="pt-20"><ErrorState variant="unauthorized" /></div>;

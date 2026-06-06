@@ -6,6 +6,7 @@
 import type { RoleCode } from './rbac';
 import { APPROVAL_FLOW } from './rbac';
 import { eventBus } from './eventBus';
+import { supabase } from './supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -185,22 +186,51 @@ export const WORKFLOW_REGISTRY: Record<string, WorkflowDefinition> = {
   user_registration:   REGISTRATION_WORKFLOW,
 };
 
-// ─── In-memory instance store (replace with Supabase in production) ───────────
-
-const INSTANCES: Map<string, WorkflowInstance> = new Map();
+// ─── DB persistence helpers ───────────────────────────────────────────────────
 
 function generateId(): string {
   return `wf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+async function persistInstance(instance: WorkflowInstance): Promise<void> {
+  await supabase.from('workflow_instances').upsert({
+    id:              instance.id,
+    definition_id:   instance.definitionId,
+    entity_type:     instance.entityType,
+    entity_id:       instance.entityId,
+    status:          instance.status,
+    current_step_id: instance.currentStepId,
+    metadata:        instance.metadata ?? {},
+    started_at:      new Date(instance.startedAt).toISOString(),
+    completed_at:    instance.completedAt ? new Date(instance.completedAt).toISOString() : null,
+    created_by:      (await supabase.auth.getUser()).data.user?.id ?? '',
+  });
+}
+
+async function persistStepHistory(instanceId: string, records: WorkflowStepRecord[]): Promise<void> {
+  if (records.length === 0) return;
+  const latest = records[records.length - 1];
+  await supabase.from('workflow_step_history').insert({
+    instance_id:   instanceId,
+    step_id:       latest.stepId,
+    step_name:     latest.stepName,
+    assigned_role: latest.assignedRole,
+    status:        latest.status,
+    actor_role:    latest.actorRole ?? null,
+    notes:         latest.notes ?? null,
+    started_at:    new Date(latest.startedAt).toISOString(),
+    completed_at:  latest.completedAt ? new Date(latest.completedAt).toISOString() : null,
+  });
+}
+
 // ─── Engine API ───────────────────────────────────────────────────────────────
 
-export function startWorkflow(
+export async function startWorkflow(
   definitionId: string,
   entityType:   string,
   entityId:     string,
   metadata?:    Record<string, unknown>
-): WorkflowInstance | null {
+): Promise<WorkflowInstance | null> {
   const definition = WORKFLOW_REGISTRY[definitionId];
   if (!definition) return null;
 
@@ -215,19 +245,20 @@ export function startWorkflow(
     status:        'running',
     currentStepId: definition.firstStepId,
     stepHistory:   [{
-      stepId:      firstStep.id,
-      stepName:    firstStep.name,
+      stepId:       firstStep.id,
+      stepName:     firstStep.name,
       assignedRole: firstStep.assignedRole,
       status:       'in_progress',
       startedAt:    Date.now(),
     }],
-    startedAt:     Date.now(),
+    startedAt: Date.now(),
     metadata,
   };
 
-  INSTANCES.set(instance.id, instance);
+  // Persist to DB — workflow survives refresh/logout/restart
+  await persistInstance(instance);
+  await persistStepHistory(instance.id, instance.stepHistory);
 
-  // Notify via event bus
   eventBus.emit('approval.required', {
     entityType,
     entityId,
@@ -238,55 +269,92 @@ export function startWorkflow(
   return instance;
 }
 
-export function advanceWorkflow(
+export async function advanceWorkflow(
   instanceId: string,
   actorRole:  RoleCode,
   outcome:    'approved' | 'rejected' | 'forwarded',
   notes?:     string
-): WorkflowInstance | null {
-  const instance = INSTANCES.get(instanceId);
-  if (!instance || instance.status !== 'running') return null;
+): Promise<WorkflowInstance | null> {
+  // Load from DB to get current state (survives page reloads)
+  const { data: dbInstance, error } = await supabase
+    .from('workflow_instances')
+    .select('*')
+    .eq('id', instanceId)
+    .maybeSingle();
 
-  const definition  = WORKFLOW_REGISTRY[instance.definitionId];
+  if (error || !dbInstance) return null;
+  if (dbInstance.status !== 'running') return null;
+
+  const definition = WORKFLOW_REGISTRY[dbInstance.definition_id as string];
   if (!definition) return null;
 
-  const currentStep = instance.currentStepId
-    ? definition.steps[instance.currentStepId]
-    : null;
+  const currentStepId = dbInstance.current_step_id as string | null;
+  const currentStep   = currentStepId ? definition.steps[currentStepId] : null;
   if (!currentStep) return null;
 
-  // Mark current step completed
-  const lastRecord = instance.stepHistory.find((r) => r.stepId === currentStep.id && !r.completedAt);
-  if (lastRecord) {
-    lastRecord.completedAt = Date.now();
-    lastRecord.actorRole   = actorRole;
-    lastRecord.notes       = notes;
-    lastRecord.status      = outcome === 'rejected' ? 'skipped' : 'completed';
-  }
+  // Reconstruct instance from DB row
+  const instance: WorkflowInstance = {
+    id:            String(dbInstance.id),
+    definitionId:  String(dbInstance.definition_id),
+    entityType:    String(dbInstance.entity_type),
+    entityId:      String(dbInstance.entity_id),
+    status:        dbInstance.status as WorkflowStatus,
+    currentStepId: dbInstance.current_step_id as string | null,
+    stepHistory:   [],
+    startedAt:     new Date(String(dbInstance.started_at)).getTime(),
+    completedAt:   dbInstance.completed_at ? new Date(String(dbInstance.completed_at)).getTime() : undefined,
+    metadata:      dbInstance.metadata as Record<string, unknown>,
+  };
+
+  const completedStepRecord: WorkflowStepRecord = {
+    stepId:       currentStep.id,
+    stepName:     currentStep.name,
+    assignedRole: currentStep.assignedRole,
+    status:       outcome === 'rejected' ? 'skipped' : 'completed',
+    startedAt:    Date.now() - 1000,
+    completedAt:  Date.now(),
+    actorRole,
+    notes,
+  };
 
   if (outcome === 'rejected') {
     instance.status        = 'cancelled';
     instance.currentStepId = null;
     instance.completedAt   = Date.now();
+    instance.stepHistory   = [completedStepRecord];
+    await persistInstance(instance);
+    await persistStepHistory(instance.id, instance.stepHistory);
     return instance;
   }
 
-  // Advance to next step
   const nextStepId = currentStep.nextStepId;
   if (!nextStepId) {
-    // Workflow complete
     instance.status        = 'completed';
     instance.currentStepId = null;
     instance.completedAt   = Date.now();
+    instance.stepHistory   = [completedStepRecord];
   } else {
-    const nextStep = definition.steps[nextStepId];
-    instance.currentStepId = nextStepId;
-    instance.stepHistory.push({
+    const nextStep          = definition.steps[nextStepId];
+    instance.currentStepId  = nextStepId;
+    const nextRecord: WorkflowStepRecord = {
       stepId:       nextStepId,
       stepName:     nextStep.name,
       assignedRole: nextStep.assignedRole,
       status:       'in_progress',
       startedAt:    Date.now(),
+    };
+    instance.stepHistory = [completedStepRecord, nextRecord];
+
+    // Record SLA due date
+    const slaDue = new Date(Date.now() + nextStep.slaHours * 3600_000).toISOString();
+    await supabase.from('workflow_step_history').insert({
+      instance_id:   instanceId,
+      step_id:       nextStepId,
+      step_name:     nextStep.name,
+      assigned_role: nextStep.assignedRole,
+      status:        'in_progress',
+      sla_due_at:    slaDue,
+      started_at:    new Date().toISOString(),
     });
 
     eventBus.emit('approval.required', {
@@ -297,20 +365,74 @@ export function advanceWorkflow(
     });
   }
 
-  INSTANCES.set(instanceId, instance);
+  await persistInstance(instance);
+  await persistStepHistory(instance.id, [completedStepRecord]);
   return instance;
 }
 
-export function getWorkflowInstance(instanceId: string): WorkflowInstance | null {
-  return INSTANCES.get(instanceId) ?? null;
+export async function getWorkflowInstance(instanceId: string): Promise<WorkflowInstance | null> {
+  const { data, error } = await supabase
+    .from('workflow_instances')
+    .select('*')
+    .eq('id', instanceId)
+    .maybeSingle();
+  if (error || !data) return null;
+
+  return {
+    id:            String(data.id),
+    definitionId:  String(data.definition_id),
+    entityType:    String(data.entity_type),
+    entityId:      String(data.entity_id),
+    status:        data.status as WorkflowStatus,
+    currentStepId: data.current_step_id as string | null,
+    stepHistory:   [],
+    startedAt:     new Date(String(data.started_at)).getTime(),
+    completedAt:   data.completed_at ? new Date(String(data.completed_at)).getTime() : undefined,
+    metadata:      data.metadata as Record<string, unknown>,
+  };
 }
 
-export function getWorkflowsForEntity(entityId: string): WorkflowInstance[] {
-  return Array.from(INSTANCES.values()).filter((i) => i.entityId === entityId);
+export async function getWorkflowsForEntity(entityId: string): Promise<WorkflowInstance[]> {
+  const { data, error } = await supabase
+    .from('workflow_instances')
+    .select('*')
+    .eq('entity_id', entityId)
+    .order('started_at', { ascending: false });
+  if (error) return [];
+
+  return (data ?? []).map((row) => ({
+    id:            String(row.id),
+    definitionId:  String(row.definition_id),
+    entityType:    String(row.entity_type),
+    entityId:      String(row.entity_id),
+    status:        row.status as WorkflowStatus,
+    currentStepId: row.current_step_id as string | null,
+    stepHistory:   [],
+    startedAt:     new Date(String(row.started_at)).getTime(),
+    completedAt:   row.completed_at ? new Date(String(row.completed_at)).getTime() : undefined,
+    metadata:      row.metadata as Record<string, unknown>,
+  }));
 }
 
-export function getAllActiveWorkflows(): WorkflowInstance[] {
-  return Array.from(INSTANCES.values()).filter((i) => i.status === 'running');
+export async function getAllActiveWorkflows(): Promise<WorkflowInstance[]> {
+  const { data, error } = await supabase
+    .from('workflow_instances')
+    .select('*')
+    .eq('status', 'running')
+    .order('started_at', { ascending: false });
+  if (error) return [];
+
+  return (data ?? []).map((row) => ({
+    id:            String(row.id),
+    definitionId:  String(row.definition_id),
+    entityType:    String(row.entity_type),
+    entityId:      String(row.entity_id),
+    status:        'running' as WorkflowStatus,
+    currentStepId: row.current_step_id as string | null,
+    stepHistory:   [],
+    startedAt:     new Date(String(row.started_at)).getTime(),
+    metadata:      row.metadata as Record<string, unknown>,
+  }));
 }
 
 // ─── Auto-registration: listen to platform events → start workflows ───────────
@@ -328,7 +450,9 @@ export function initWorkflowEngine(): () => void {
         const entityId = (
           p['inspectionId'] ?? p['reportId'] ?? p['hazardId'] ?? p['userId'] ?? event.id
         ) as string;
-        startWorkflow(defId, definition.entityType, entityId, { triggeredBy: event.name });
+        // Fire-and-forget; workflow engine persists to DB
+        startWorkflow(defId, definition.entityType, entityId, { triggeredBy: event.name })
+          .catch((err) => console.error('[WorkflowEngine] Failed to start workflow:', err));
       }
     );
     unsubs.push(unsub);

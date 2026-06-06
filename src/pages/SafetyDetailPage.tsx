@@ -1,8 +1,8 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, ShieldAlert } from 'lucide-react';
-import { MOCK_HAZARD_ASSESSMENTS, type MockHazardAssessment } from '../lib/mock-data';
-import { getHazardById } from '../lib/api';
+import { getHazardDetail } from '../services/safety';
+import type { HazardDetail } from '../types/safety';
 import PageHeader from '../components/ui/PageHeader';
 import DashboardSection from '../components/dashboard/DashboardSection';
 import RiskBadge from '../components/safety/RiskBadge';
@@ -15,26 +15,38 @@ import EvidenceGallery from '../components/safety/EvidenceGallery';
 export default function SafetyDetailPage() {
   const { id }   = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [assessment, setAssessment] = useState<MockHazardAssessment | null>(
-    MOCK_HAZARD_ASSESSMENTS.find((a) => a.id === id) ?? null
-  );
+  const [detail,  setDetail]  = useState<HazardDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    getHazardById(id)
-      .then((data) => { if (data) setAssessment(data as MockHazardAssessment); })
-      .catch(() => {});
+    setLoading(true);
+    setError(null);
+    getHazardDetail(id)
+      .then(setDetail)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [id]);
 
-  if (!assessment) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+        <p className="mt-3 text-[11px] font-mono uppercase text-slate-600">Loading assessment…</p>
+      </div>
+    );
+  }
+
+  if (error || !detail) {
     return (
       <div className="flex flex-col items-center justify-center py-32 text-center">
         <ShieldAlert className="h-12 w-12 text-slate-700" />
         <h3 className="mt-4 text-sm font-bold uppercase tracking-widest text-slate-500">
-          Assessment Not Found
+          {error ? 'Failed to load assessment' : 'Assessment Not Found'}
         </h3>
         <p className="mt-1 text-[11px] font-mono text-slate-700 uppercase">
-          {id} does not match any registered hazard assessment
+          {error ?? `${id} does not match any registered hazard assessment`}
         </p>
         <button
           type="button"
@@ -48,13 +60,13 @@ export default function SafetyDetailPage() {
     );
   }
 
-  const passCount = assessment.checkItems.filter((i) => i.compliant === true).length;
-  const total     = assessment.checkItems.length;
+  const { assessment, checkItems, correctiveActions } = detail;
+  const passCount     = checkItems.filter((i) => i.compliant === true).length;
+  const total         = checkItems.length;
   const compliancePct = total > 0 ? Math.round((passCount / total) * 100) : 0;
 
   return (
     <div className="space-y-8">
-      {/* Breadcrumb */}
       <div className="space-y-3">
         <button
           type="button"
@@ -66,23 +78,20 @@ export default function SafetyDetailPage() {
         </button>
         <PageHeader
           title={assessment.hazardTitle}
-          subtitle={`${assessment.id} · ${assessment.category}`}
+          subtitle={`${assessment.category}`}
           action={<WorkflowBadge status={assessment.workflowStatus} size="md" />}
         />
       </div>
 
-      {/* Section A — Hazard Overview */}
       <DashboardSection title="Hazard Overview" subtitle="Category, risk level, project linkage and inspector assignment">
         <div className="grid gap-4 lg:grid-cols-2">
-          {/* Left — meta grid */}
           <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 space-y-4">
             {[
-              { label: 'Assessment ID',   value: assessment.id },
-              { label: 'Category',        value: assessment.category },
-              { label: 'Directorate',     value: assessment.directorateCode },
-              { label: 'Inspector',       value: assessment.inspector },
-              { label: 'Date Raised',     value: assessment.createdAt },
-              { label: 'Last Updated',    value: assessment.updatedAt },
+              { label: 'Category',     value: assessment.category },
+              { label: 'Directorate',  value: assessment.directorateCode },
+              { label: 'Inspector',    value: assessment.inspectorName ?? '—' },
+              { label: 'Date Raised',  value: assessment.createdAt.split('T')[0] },
+              { label: 'Last Updated', value: assessment.updatedAt.split('T')[0] },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between gap-4 border-b border-slate-800/30 pb-3 last:border-0 last:pb-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 shrink-0">{row.label}</p>
@@ -91,19 +100,18 @@ export default function SafetyDetailPage() {
             ))}
           </div>
 
-          {/* Right — status cards */}
           <div className="space-y-3">
-            {/* Linked project */}
-            <div
-              onClick={() => navigate(`/projects/${assessment.projectId}`)}
-              className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 cursor-pointer transition hover:bg-slate-900/40"
-            >
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-1">Linked Project</p>
-              <p className="text-[13px] font-bold text-white leading-snug">{assessment.projectName}</p>
-              <p className="mt-0.5 text-[10px] font-mono text-slate-500">{assessment.projectCode}</p>
-            </div>
+            {assessment.projectId && (
+              <div
+                onClick={() => navigate(`/projects/${assessment.projectId}`)}
+                className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 cursor-pointer transition hover:bg-slate-900/40"
+              >
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-1">Linked Project</p>
+                <p className="text-[13px] font-bold text-white leading-snug">{assessment.projectName}</p>
+                <p className="mt-0.5 text-[10px] font-mono text-slate-500">{assessment.projectCode}</p>
+              </div>
+            )}
 
-            {/* Risk + compliance + compliance meter */}
             <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">Risk Level</p>
@@ -113,8 +121,6 @@ export default function SafetyDetailPage() {
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">Compliance</p>
                 <ComplianceIndicator status={assessment.complianceStatus} size="md" />
               </div>
-
-              {/* Compliance meter */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">Checklist Pass Rate</p>
@@ -133,15 +139,13 @@ export default function SafetyDetailPage() {
         </div>
       </DashboardSection>
 
-      {/* Section B — Compliance Checklist */}
       <DashboardSection
         title="Compliance Checklist"
         subtitle={`${total} checklist item${total !== 1 ? 's' : ''} · ${passCount} compliant`}
       >
-        <HazardChecklist items={assessment.checkItems} />
+        <HazardChecklist items={checkItems} />
       </DashboardSection>
 
-      {/* Section C — Observations */}
       <DashboardSection title="Inspector Observations" subtitle="Field findings recorded during site assessment">
         <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
           {assessment.observations ? (
@@ -152,35 +156,23 @@ export default function SafetyDetailPage() {
         </div>
       </DashboardSection>
 
-      {/* Section D — Evidence Panel */}
       <DashboardSection title="Evidence & Documentation" subtitle="Site photographs, incident records and supporting documents">
         <EvidenceGallery />
       </DashboardSection>
 
-      {/* Section E — Corrective Actions */}
       <DashboardSection
         title="Corrective Actions"
-        subtitle={`${assessment.correctiveActions.length} action${assessment.correctiveActions.length !== 1 ? 's' : ''} assigned`}
+        subtitle={`${correctiveActions.length} action${correctiveActions.length !== 1 ? 's' : ''} assigned`}
       >
-        <CorrectiveActionCard actions={assessment.correctiveActions} />
+        <CorrectiveActionCard actions={correctiveActions} />
       </DashboardSection>
 
-      {/* Section F — Final Risk Summary */}
       <DashboardSection title="Risk Summary" subtitle="Overall assessment outcome and recommendation">
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            {
-              label: 'Risk Classification',
-              content: <RiskBadge level={assessment.riskLevel} size="md" />,
-            },
-            {
-              label: 'Compliance Outcome',
-              content: <ComplianceIndicator status={assessment.complianceStatus} size="md" />,
-            },
-            {
-              label: 'Workflow State',
-              content: <WorkflowBadge status={assessment.workflowStatus} size="md" />,
-            },
+            { label: 'Risk Classification', content: <RiskBadge level={assessment.riskLevel} size="md" /> },
+            { label: 'Compliance Outcome',  content: <ComplianceIndicator status={assessment.complianceStatus} size="md" /> },
+            { label: 'Workflow State',       content: <WorkflowBadge status={assessment.workflowStatus} size="md" /> },
           ].map((card) => (
             <div key={card.label} className="rounded-xl border border-slate-800/60 bg-slate-950/70 px-5 py-4">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-3">{card.label}</p>
@@ -188,30 +180,6 @@ export default function SafetyDetailPage() {
             </div>
           ))}
         </div>
-
-        {/* Corrective action urgency summary */}
-        {assessment.correctiveActions.length > 0 && (
-          <div className="mt-3 rounded-xl border border-slate-800/60 bg-slate-950/70 px-5 py-4">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mb-3">Outstanding Actions</p>
-            <div className="flex flex-wrap gap-3">
-              {(['IMMEDIATE', 'HIGH', 'MEDIUM', 'LOW'] as const).map((urgency) => {
-                const pending = assessment.correctiveActions.filter(
-                  (a) => a.urgency === urgency && a.status !== 'resolved'
-                ).length;
-                if (pending === 0) return null;
-                const colors: Record<string, string> = {
-                  IMMEDIATE: 'text-rose-300', HIGH: 'text-rose-400', MEDIUM: 'text-amber-400', LOW: 'text-slate-400',
-                };
-                return (
-                  <div key={urgency} className="text-center">
-                    <p className={`text-xl font-black tabular-nums ${colors[urgency]}`}>{pending}</p>
-                    <p className="text-[9px] font-mono uppercase text-slate-600">{urgency.toLowerCase()}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </DashboardSection>
     </div>
   );

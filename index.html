@@ -2,8 +2,77 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DDSE - Military Directorate System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="DDSE" />
+    <meta name="theme-color" content="#0ea5e9" />
+    <meta name="description" content="Defence Directorate System for Engineering — military inspection and safety management platform" />
+
+    <!-- N-7: PWA manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Print stylesheet for N-4 PDF export -->
+    <style>
+      @media print {
+        /* Hide navigation, sidebars, and interactive elements */
+        nav, aside, .no-print, button:not(.print-visible),
+        [data-sidebar], [aria-label="Primary navigation"] {
+          display: none !important;
+        }
+        /* Classification banner always visible */
+        .classification-banner {
+          display: block !important;
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          padding: 4px 16px;
+          text-align: center;
+          font-size: 10px;
+          font-weight: 900;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          z-index: 9999;
+        }
+        .classification-banner.unclassified { background: #166534; color: #fff; }
+        .classification-banner.restricted   { background: #92400e; color: #fff; }
+        .classification-banner.confidential { background: #7c2d12; color: #fff; }
+        .classification-banner.secret       { background: #7f1d1d; color: #fff; }
+        .classification-banner.top-secret   { background: #1e1b4b; color: #fbbf24; }
+        /* Page setup */
+        @page {
+          size: A4;
+          margin: 20mm 15mm;
+        }
+        body {
+          background: white !important;
+          color: black !important;
+          font-size: 12px;
+        }
+        /* Print-friendly content */
+        .print-content {
+          display: block !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        /* Signature blocks */
+        .signature-block {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 20mm;
+          margin-top: 20mm;
+          page-break-inside: avoid;
+        }
+        .signature-line {
+          border-top: 1px solid #000;
+          padding-top: 4px;
+          margin-top: 20mm;
+        }
+      }
+    </style>
+
+    <title>DDSE — Defence Engineering Platform</title>
   </head>
   <body>
     <div id="root"></div>

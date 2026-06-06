@@ -1,5 +1,16 @@
 import { CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
-import type { MockQuestion } from '../../lib/mock-data';
+
+export type QuestionType = 'boolean' | 'rating' | 'text' | 'risk' | 'select';
+
+export interface Question {
+  id:       string;
+  code:     string;
+  prompt:   string;
+  type:     QuestionType;
+  weight:   number;
+  required: boolean;
+  options?: string[];
+}
 
 export type QuestionResponse =
   | { type: 'boolean'; value: 'yes' | 'no' | 'na' | null }
@@ -9,7 +20,7 @@ export type QuestionResponse =
   | { type: 'select';  value: string | null };
 
 interface Props {
-  question:  MockQuestion;
+  question:  Question;
   response:  QuestionResponse | undefined;
   onChange:  (response: QuestionResponse) => void;
 }

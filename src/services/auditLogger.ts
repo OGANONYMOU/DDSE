@@ -16,7 +16,11 @@ export type AuditAction =
   | 'inspection.rejected'
   | 'report.created'
   | 'report.submitted'
+  | 'report.approved'
   | 'report.modified'
+  | 'hazard.created'
+  | 'hazard.workflow_updated'
+  | 'hazard.corrective_action_closed'
   | 'hazard.escalated'
   | 'hazard.resolved'
   | 'personnel.role_changed'
@@ -28,7 +32,8 @@ export type AuditAction =
   | 'document.uploaded'
   | 'document.deleted'
   | 'system.emergency_lockdown'
-  | 'system.config_changed';
+  | 'system.config_changed'
+  | 'automation.inspection_flagged_overdue';
 
 export interface AuditEvent {
   id:          string;
