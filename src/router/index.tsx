@@ -24,13 +24,10 @@ const AuditLogPage         = lazy(() => import('../pages/AuditLogPage'));
 const NotFoundPage         = lazy(() => import('../pages/NotFoundPage'));
 
 // Phase 11 — Enterprise Expansion
-const ReadinessPage        = lazy(() => import('../pages/ReadinessPage'));
 const BroadcastPage        = lazy(() => import('../pages/BroadcastPage'));
-const IntelligencePage     = lazy(() => import('../pages/IntelligencePage'));
 
 // Phase 12 — Platform Ecosystem
 const SystemHealthPage     = lazy(() => import('../pages/SystemHealthPage'));
-const AutomationPage       = lazy(() => import('../pages/AutomationPage'));
 
 function Lazy({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
@@ -93,28 +90,8 @@ export function createAppRouter({ user, onLogout }: RouterOptions) {
 
         // ── Phase 11 — Enterprise Expansion ────────────────────────────────
         {
-          path: 'readiness',
-          element: (
-            <Lazy>
-              <RouteGuard permission="inspections.view_all">
-                <ReadinessPage />
-              </RouteGuard>
-            </Lazy>
-          ),
-        },
-        {
           path: 'broadcasts',
           element: <Lazy><BroadcastPage /></Lazy>,
-        },
-        {
-          path: 'intelligence',
-          element: (
-            <Lazy>
-              <RouteGuard deck="analytics">
-                <IntelligencePage />
-              </RouteGuard>
-            </Lazy>
-          ),
         },
 
         // ── Phase 12 — Platform Ecosystem ──────────────────────────────────
@@ -124,16 +101,6 @@ export function createAppRouter({ user, onLogout }: RouterOptions) {
             <Lazy>
               <RouteGuard permission="system.audit_logs">
                 <SystemHealthPage />
-              </RouteGuard>
-            </Lazy>
-          ),
-        },
-        {
-          path: 'automation',
-          element: (
-            <Lazy>
-              <RouteGuard permission="system.audit_logs">
-                <AutomationPage />
               </RouteGuard>
             </Lazy>
           ),

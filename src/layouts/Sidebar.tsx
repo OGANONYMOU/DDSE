@@ -15,11 +15,8 @@ import {
   Shield,
   ChevronRight,
   ScrollText,
-  Activity,
   Radio,
-  Brain,
   HeartPulse,
-  Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getClearanceLabel, getClearanceLevel, getRoleConfig, hasPermission, type Permission } from '../lib/rbac';
@@ -42,9 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/analytics',     label: 'Analytics',          icon: BarChart3 },
   { to: '/personnel',     label: 'Personnel',          icon: Users },
   // Phase 11 — Enterprise modules
-  { to: '/readiness',     label: 'Readiness',          icon: Activity,     permission: 'inspections.view_all' },
   { to: '/broadcasts',    label: 'Broadcasts',         icon: Radio },
-  { to: '/intelligence',  label: 'Intelligence',       icon: Brain,        permission: 'inspections.view_all' },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
@@ -53,7 +48,6 @@ const BOTTOM_ITEMS: NavItem[] = [
   { to: '/audit-log',      label: 'Audit Log',     icon: ScrollText,  permission: 'audit.view' },
   // Phase 12 — Platform Ecosystem
   { to: '/system-health',  label: 'System Health', icon: HeartPulse,  permission: 'system.audit_logs' },
-  { to: '/automation',     label: 'Automation',    icon: Zap,         permission: 'system.audit_logs' },
 ];
 
 export default function Sidebar() {

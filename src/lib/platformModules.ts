@@ -193,48 +193,6 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     sla: { apiResponseMs: 1000, pageLoadMs: 1500, availabilityPct: 99.0 },
   },
 
-  // ── 7. Readiness ──────────────────────────────────────────────────────────
-  {
-    id: 'readiness', name: 'Operational Readiness Center', version: '3.0.0', status: 'active',
-    owner: 'DDSE Core', dataOwner: 'local',
-    description: 'Multi-dimensional readiness scoring across Safety, Compliance, Projects, Personnel dimensions',
-    routes: [{ path: '/readiness', label: 'Readiness', permission: 'inspections.view_all' }],
-    permissions: ['inspections.view_all', 'data.view_nationwide'],
-    events: {
-      emits:   ['system.health_degraded', 'compliance.threshold_breached'],
-      listens: ['inspection.approved', 'hazard.resolved', 'project.updated'],
-    },
-    dataBoundary: {
-      tables:  [],
-      indexes: [],
-      caches:  ['readinessReport'],
-    },
-    integrations: [],
-    plugins:      [],
-    sla: { apiResponseMs: 200, pageLoadMs: 600, availabilityPct: 99.9 },
-  },
-
-  // ── 8. Intelligence ───────────────────────────────────────────────────────
-  {
-    id: 'intelligence', name: 'Operational Intelligence', version: '3.0.0', status: 'active',
-    owner: 'DDSE Core', dataOwner: 'local',
-    description: 'AI-assisted insights, contractor scoring, hazard patterns, predictive trend analysis',
-    routes: [{ path: '/intelligence', label: 'Intelligence', deck: 'analytics' }],
-    permissions: ['inspections.view_all', 'data.view_nationwide', 'audit.view'],
-    events: {
-      emits:   [],
-      listens: ['inspection.submitted', 'hazard.reported', 'project.updated'],
-    },
-    dataBoundary: {
-      tables:  [],
-      indexes: [],
-      caches:  ['insightReport', 'analyticsSummary'],
-    },
-    integrations: [],
-    plugins:      ['ai-recommendation-engine'],
-    sla: { apiResponseMs: 300, pageLoadMs: 800, availabilityPct: 99.5 },
-  },
-
   // ── 9. Broadcasts ─────────────────────────────────────────────────────────
   {
     id: 'broadcasts', name: 'Command Broadcasts', version: '3.0.0', status: 'active',
@@ -284,7 +242,6 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     description: 'Platform observability, automation rules, workflow status, and integration health',
     routes: [
       { path: '/system-health', label: 'System Health',  permission: 'system.config' },
-      { path: '/automation',    label: 'Automation',     permission: 'system.audit_logs' },
     ],
     permissions: ['system.config', 'system.audit_logs'],
     events: {
