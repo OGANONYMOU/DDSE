@@ -1,1 +1,0 @@
-const e=["DESE","DEME","DQMS","DWE"],r={UNCLASSIFIED:"text-slate-400  border-slate-700/60 bg-slate-800/30",RESTRICTED:"text-amber-400  border-amber-500/30 bg-amber-500/10",CONFIDENTIAL:"text-rose-400   border-rose-500/30  bg-rose-500/10"};export{r as C,e as D};
