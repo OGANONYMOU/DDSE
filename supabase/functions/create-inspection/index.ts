@@ -2,8 +2,9 @@
 // so in-progress inspections are locked to the template they started with.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import { withCors } from '../_helpers/cors.ts'
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
   }
@@ -38,10 +39,10 @@ Deno.serve(async (req) => {
       )
     }
 
-    // I-15: Read the module's current version to snapshot into the inspection
+    // I-15: Read the module's current version + question template to snapshot into the inspection
     const { data: moduleData } = await supabase
       .from('modules')
-      .select('code, version')
+      .select('code, version, template')
       .eq('code', payload.moduleCode)
       .maybeSingle()
 
@@ -71,6 +72,47 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Clone the module's question template into this inspection's own sections/items
+    // so the officer sees the real evaluation checklist instead of a blank dossier.
+    const templateSections: Array<{ title: string; items: Array<{ code: string; prompt: string; responseType: string; weight: number }> }> =
+      moduleData?.template?.sections ?? []
+
+    if (templateSections.length > 0) {
+      const sectionRows = templateSections.map((section, sIdx) => ({
+        id:             `${data.id}:s${sIdx}`,
+        inspection_id:  data.id,
+        title:          section.title,
+        display_order:  sIdx,
+      }))
+
+      const { error: sectionsError } = await supabase.from('inspection_sections').insert(sectionRows)
+      if (sectionsError) {
+        return new Response(JSON.stringify({ error: `Inspection created, but failed to load its questions: ${sectionsError.message}` }), {
+          status: 400, headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      const itemRows = templateSections.flatMap((section, sIdx) =>
+        section.items.map((item, iIdx) => ({
+          id:             `${data.id}:s${sIdx}:i${iIdx}`,
+          section_id:     `${data.id}:s${sIdx}`,
+          code:           item.code,
+          prompt:         item.prompt,
+          weight:         item.weight,
+          response_type:  item.responseType,
+        }))
+      )
+
+      if (itemRows.length > 0) {
+        const { error: itemsError } = await supabase.from('inspection_items').insert(itemRows)
+        if (itemsError) {
+          return new Response(JSON.stringify({ error: `Inspection created, but failed to load its questions: ${itemsError.message}` }), {
+            status: 400, headers: { 'Content-Type': 'application/json' },
+          })
+        }
+      }
+    }
+
     return new Response(
       JSON.stringify({ success: true, id: data.id, templateVersion }),
       { headers: { 'Content-Type': 'application/json' } }
@@ -81,4 +123,4 @@ Deno.serve(async (req) => {
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
-})
+}))

@@ -79,6 +79,16 @@ describe('validateServiceNumber', () => {
   it('rejects empty', () => {
     expect(validateServiceNumber('')).not.toBeNull();
   });
+
+  it('accepts alphanumeric service numbers', () => {
+    expect(validateServiceNumber('SA000001')).toBeNull();
+    expect(validateServiceNumber('ng2026abc')).toBeNull();
+  });
+
+  it('rejects symbols and spaces', () => {
+    expect(validateServiceNumber('SA-0001')).not.toBeNull();
+    expect(validateServiceNumber('SA 0001')).not.toBeNull();
+  });
 });
 
 describe('validateRegistrationForm', () => {

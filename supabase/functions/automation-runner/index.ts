@@ -4,6 +4,7 @@
 // Does NOT require a user session — uses service_role key.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import { withCors } from '../_helpers/cors.ts'
 
 const SUPABASE_URL     = Deno.env.get('SUPABASE_URL')     ?? ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -297,11 +298,7 @@ async function runRule(ruleKey: string, config: Record<string, unknown>): Promis
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
-Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*' } })
-  }
-
+Deno.serve(withCors(async (req: Request) => {
   if (!isAuthorized(req)) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -379,4 +376,4 @@ Deno.serve(async (req: Request) => {
     JSON.stringify({ success: true, rulesRun: results.length, results }),
     { status: 200, headers: { 'Content-Type': 'application/json' } }
   )
-})
+}))

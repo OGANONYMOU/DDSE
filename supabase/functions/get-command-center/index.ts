@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import { withCors } from '../_helpers/cors.ts'
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) {
     return new Response(
@@ -35,16 +36,23 @@ Deno.serve(async (req) => {
       { data: findings },
       { data: correctiveActions },
       { data: modules },
+      { data: evidence },
+      { data: schedules },
     ] = await Promise.all([
-      supabase.from('inspections').select('id, module_code, status, directorate_code, created_at'),
+      supabase.from('inspections').select('id, module_code, status, directorate_code, created_at, final_score'),
       supabase.from('findings').select('id, severity, status, inspection_id'),
       supabase.from('corrective_actions').select('id, status, inspection_id'),
-      supabase.from('modules').select('code, title'),
+      supabase.from('modules').select('code, title, classification'),
+      supabase.from('evidence').select('id, inspection_id'),
+      supabase.from('inspection_schedules').select('module_code, status'),
     ])
 
     const allInspections = inspections ?? []
     const allFindings = findings ?? []
     const allCorrective = correctiveActions ?? []
+    const allEvidence = evidence ?? []
+    const allSchedules = schedules ?? []
+    const inspectionsWithEvidence = new Set(allEvidence.map((e: any) => e.inspection_id))
 
     const totalInspections = allInspections.length
     const completedInspections = allInspections.filter((i: any) => i.status === 'completed').length
@@ -61,18 +69,34 @@ Deno.serve(async (req) => {
     const moduleSummaries = (modules ?? []).map((mod: any) => {
       const modInspections = allInspections.filter((i: any) => i.module_code === mod.code)
       const modInspectionIds = modInspections.map((i: any) => i.id)
-      const modFindings = allFindings.filter((f: any) => modInspectionIds.includes(f.inspection_id))
       const modCorrective = allCorrective.filter((c: any) => modInspectionIds.includes(c.inspection_id))
+
+      const scored = modInspections.filter((i: any) => i.final_score !== null && i.final_score !== undefined)
+      const averageScore = scored.length > 0
+        ? Math.round(scored.reduce((sum: number, i: any) => sum + Number(i.final_score), 0) / scored.length)
+        : 0
+
+      const withEvidence = modInspections.filter((i: any) => inspectionsWithEvidence.has(i.id)).length
+      const evidenceComplete = modInspections.length > 0
+        ? Math.round((withEvidence / modInspections.length) * 100)
+        : 0
+
+      const overdue = allSchedules.filter((s: any) => s.module_code === mod.code && s.status === 'overdue').length
 
       return {
         moduleCode: mod.code,
         inspections: modInspections.length,
-        overdue: 0,
-        averageScore: 0,
+        overdue,
+        averageScore,
         openCorrectiveActions: modCorrective.filter((c: any) => c.status !== 'closed').length,
-        evidenceComplete: 0,
+        evidenceComplete,
       }
     })
+
+    const restrictedModulesVisible = (modules ?? []).filter((m: any) => m.classification !== 'general').length
+    const evidenceCompleteness = totalInspections > 0
+      ? Math.round((allInspections.filter((i: any) => inspectionsWithEvidence.has(i.id)).length / totalInspections) * 100)
+      : 0
 
     const severityDistribution: Record<string, number> = {
       critical: 0,
@@ -129,8 +153,8 @@ Deno.serve(async (req) => {
       posture: {
         readinessAverage,
         safetyRiskLevel,
-        evidenceCompleteness: 0,
-        restrictedModulesVisible: 0,
+        evidenceCompleteness,
+        restrictedModulesVisible,
       },
       moduleSummaries,
       severityDistribution,
@@ -148,4 +172,4 @@ Deno.serve(async (req) => {
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
-})
+}))

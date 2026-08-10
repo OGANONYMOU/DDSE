@@ -76,7 +76,12 @@ export async function logAuditEvent(
     status:     opts.status ?? 'success',
   };
 
-  if (!supabaseMisconfigured) {
+  // RLS requires an authenticated writer — skip the network round-trip (and the
+  // console noise from a guaranteed-401) when there's no active Supabase session,
+  // e.g. on the pre-login boot sequence or a Dev Access Panel mock session.
+  const hasSession = !supabaseMisconfigured && !!(await supabase.auth.getSession()).data.session;
+
+  if (hasSession) {
     try {
       await supabase.from('audit_logs').insert({
         action:      event.action,
@@ -109,6 +114,8 @@ export async function logAuditEvent(
 // Flush the offline queue to Supabase.
 export async function flushAuditQueue(): Promise<void> {
   if (supabaseMisconfigured) return;
+  const hasSession = !!(await supabase.auth.getSession()).data.session;
+  if (!hasSession) return;
   try {
     const raw   = localStorage.getItem('ddse_audit_queue');
     if (!raw) return;

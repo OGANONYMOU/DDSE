@@ -1,6 +1,8 @@
 import { supabase, serviceNumberToEmail, sessionExpiresAt, toPlatformUser } from './supabase';
 import { checkSignInLimit, checkOtpRequestLimit, checkRegistrationLimit, formatRetryTime } from './rateLimiter';
+import { EVALUATION_TEMPLATES } from './evaluationTemplates';
 import type {
+  AnalyticsSummary,
   DashboardSummary,
   InspectionDetail,
   InspectionSummary,
@@ -11,260 +13,144 @@ import type {
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
-const DEV_MODULES: ModuleDefinition[] = [
-  {
-    id: 'standard_evaluation',
-    moduleCode: 'standard_evaluation',
-    title: 'Standard & Evaluation',
-    classification: 'standard_evaluation',
-    description: 'Track compliance, document audits, and baseline assessment workflows.',
-  },
-  {
-    id: 'safety_manual',
-    moduleCode: 'safety_manual',
-    title: 'Safety & Manual',
-    classification: 'safety_manual',
-    description: 'Monitor safety checks, incident findings, and corrective actions.',
-  },
-  {
-    id: 'project_monitoring',
-    moduleCode: 'project_monitoring',
-    title: 'Project Monitoring',
-    classification: 'project_monitoring',
-    description: 'Oversee project inspections, progress reports and evidence collection.',
-  },
-];
+// Dev-mode module list mirrors the real, live module set (same 9 departments
+// and question templates seeded in supabase/migrations/20260810120000_module_templates.sql)
+// so the "Dev Access Panel" demo path shows the real DDSE evaluation content.
+const DEV_MODULES: ModuleDefinition[] = EVALUATION_TEMPLATES.map((m) => ({
+  id: m.code,
+  moduleCode: m.code,
+  title: m.title,
+  classification: m.classification,
+  description: m.description,
+}));
 
-const DEV_INSPECTIONS: InspectionSummary[] = [
-  {
-    _id: 'insp-001',
-    title: 'Standard evaluation readiness sweep',
-    moduleCode: 'standard_evaluation',
-    status: 'in_progress',
-    scoreOverall: 78,
-    complianceBand: 'B',
-    riskLevel: 'MEDIUM',
-    completionPercent: 62,
-    directorateCode: 'standard_evaluation',
-    unitCode: 'Unit 14',
-    updatedAt: Date.now() - 1000 * 60 * 30,
-  },
-  {
-    _id: 'insp-002',
-    title: 'Safety manual emergency response review',
-    moduleCode: 'safety_manual',
-    status: 'submitted',
-    scoreOverall: 88,
-    complianceBand: 'A',
-    riskLevel: 'LOW',
-    completionPercent: 100,
-    directorateCode: 'safety_manual',
-    unitCode: 'Unit 9',
-    updatedAt: Date.now() - 1000 * 60 * 90,
-  },
-  {
-    _id: 'insp-003',
-    title: 'Project monitoring status check',
-    moduleCode: 'project_monitoring',
-    status: 'under_review',
-    scoreOverall: 66,
-    complianceBand: 'C',
-    riskLevel: 'HIGH',
-    completionPercent: 48,
-    directorateCode: 'project_monitoring',
-    unitCode: 'Unit 21',
-    updatedAt: Date.now() - 1000 * 60 * 120,
-  },
-];
+const RISK_BAND_FOR_SCORE = (score: number): { band: string; risk: string } => {
+  if (score >= 90) return { band: 'A', risk: 'LOW' };
+  if (score >= 75) return { band: 'B', risk: 'LOW' };
+  if (score >= 60) return { band: 'C', risk: 'MEDIUM' };
+  if (score >= 45) return { band: 'D', risk: 'HIGH' };
+  return { band: 'F', risk: 'HIGH' };
+};
 
-const DEV_INSPECTION_DETAILS: Record<string, InspectionDetail> = {
-  'insp-001': {
+// Builds a full InspectionDetail from a module's real question template.
+// `answeredFraction` (0-1) pre-fills that share of items with alternating
+// yes/no responses so sample dev inspections look like realistic in-flight
+// evaluations instead of either fully blank or fully complete.
+function buildDevInspectionFromTemplate(
+  id: string,
+  title: string,
+  moduleCode: string,
+  status: string,
+  answeredFraction: number,
+): InspectionDetail {
+  const template = EVALUATION_TEMPLATES.find((m) => m.code === moduleCode);
+  const templateSections = template?.sections ?? [];
+
+  let seen = 0;
+  let answered = 0;
+  let earnedWeight = 0;
+  let totalWeight = 0;
+
+  const sections = templateSections.map((section, sIdx) => ({
+    _id: `${id}-sec-${sIdx}`,
+    title: section.title,
+    items: section.items.map((item, iIdx) => {
+      seen++;
+      totalWeight += item.weight;
+      const shouldAnswer = seen / Math.max(templateSections.reduce((n, s) => n + s.items.length, 0), 1) <= answeredFraction;
+      if (!shouldAnswer) {
+        return {
+          _id: `${id}-item-${sIdx}-${iIdx}`,
+          code: item.code,
+          prompt: item.prompt,
+          responseType: item.responseType,
+          weight: item.weight,
+          response: null,
+          evidence: [],
+        };
+      }
+      answered++;
+      const isYes = iIdx % 4 !== 0; // occasional "no" so findings/risk have something to show
+      const numericScore = isYes ? 1 : 0;
+      earnedWeight += isYes ? item.weight : 0;
+      return {
+        _id: `${id}-item-${sIdx}-${iIdx}`,
+        code: item.code,
+        prompt: item.prompt,
+        responseType: item.responseType,
+        weight: item.weight,
+        response: {
+          responseValue: isYes ? 'yes' : 'no',
+          numericScore,
+          immediateRisk: !isYes,
+          remarks: isYes ? undefined : 'Flagged during walk-through — needs follow-up.',
+        },
+        evidence: [],
+      };
+    }),
+  }));
+
+  const scoreOverall = totalWeight > 0 ? Math.round((earnedWeight / totalWeight) * 100) : 0;
+  const { band, risk } = RISK_BAND_FOR_SCORE(scoreOverall);
+  const completionPercent = seen > 0 ? Math.round((answered / seen) * 100) : 0;
+
+  return {
     inspection: {
-      _id: 'insp-001',
-      title: 'Standard evaluation readiness sweep',
-      moduleCode: 'standard_evaluation',
-      status: 'in_progress',
-      scoreOverall: 78,
-      complianceBand: 'B',
-      riskLevel: 'MEDIUM',
-      completionPercent: 62,
+      _id: id,
+      title,
+      moduleCode,
+      status,
+      scoreOverall,
+      complianceBand: answered > 0 ? band : 'N/A',
+      riskLevel: risk,
+      completionPercent,
     },
-    sections: [
-      {
-        _id: 'sec-1',
-        title: 'Documentation and baseline checks',
-        items: [
-          {
-            _id: 'item-1',
-            code: 'DOC-01',
-            prompt: 'Are all standard operating procedures published and accessible?',
-            responseType: 'boolean',
-            weight: 3,
-            response: {
-              responseValue: 'Partially',
-              numericScore: 1,
-              immediateRisk: false,
-              remarks: 'Some SOPs are still in draft status.',
-            },
-            evidence: [],
-          },
-          {
-            _id: 'item-2',
-            code: 'BLS-02',
-            prompt: 'Are baseline compliance targets clearly defined?',
-            responseType: 'boolean',
-            weight: 2,
-            response: {
-              responseValue: 'Yes',
-              numericScore: 2,
-              immediateRisk: false,
-              remarks: 'Targets are aligned with operational guidance.',
-            },
-            evidence: [],
-          },
-        ],
-      },
-    ],
-    findings: [
-      {
-        _id: 'finding-001',
-        title: 'Missing SOP revision schedule',
-        detail: 'The standard operating procedure revision schedule is not documented for at least 3 procedures.',
-        severity: 'medium',
-        status: 'open',
-      },
-    ],
-    correctiveActions: [
-      {
-        _id: 'ca-001',
-        title: 'Document revision plan',
-        detail: 'Create and publish the missing SOP revision schedule by the end of the quarter.',
-        status: 'open',
-        stopWorkIssued: false,
-      },
-    ],
-    approvals: [],
-    reviewComments: [
-      {
-        _id: 'comment-001',
-        actorRoleCode: 'staff',
-        body: 'Need a stronger reference to the latest standard in item 2.',
-        createdAt: Date.now() - 1000 * 60 * 45,
-      },
-    ],
-    auditLogs: [
-      {
-        _id: 'audit-001',
-        action: 'Inspection created',
-        createdAt: Date.now() - 1000 * 60 * 90,
-      },
-      {
-        _id: 'audit-002',
-        action: 'Section 1 response updated',
-        createdAt: Date.now() - 1000 * 60 * 30,
-      },
-    ],
-  },
-  'insp-002': {
-    inspection: {
-      _id: 'insp-002',
-      title: 'Safety manual emergency response review',
-      moduleCode: 'safety_manual',
-      status: 'submitted',
-      scoreOverall: 88,
-      complianceBand: 'A',
-      riskLevel: 'LOW',
-      completionPercent: 100,
-    },
-    sections: [
-      {
-        _id: 'sec-2',
-        title: 'Emergency response readiness',
-        items: [
-          {
-            _id: 'item-3',
-            code: 'EMS-01',
-            prompt: 'Is the emergency response team roster complete?',
-            responseType: 'boolean',
-            weight: 2,
-            response: {
-              responseValue: 'Yes',
-              numericScore: 2,
-              immediateRisk: false,
-              remarks: 'Roster is current and all personnel have contact details.',
-            },
-            evidence: [],
-          },
-        ],
-      },
-    ],
+    sections,
     findings: [],
     correctiveActions: [],
     approvals: [],
     reviewComments: [],
     auditLogs: [
       {
-        _id: 'audit-003',
-        action: 'Inspection submitted for review',
-        createdAt: Date.now() - 1000 * 60 * 90,
+        _id: `${id}-audit-1`,
+        action: `Inspection ${status.replace(/_/g, ' ')}`,
+        createdAt: Date.now() - 1000 * 60 * 30,
       },
     ],
-  },
-  'insp-003': {
-    inspection: {
-      _id: 'insp-003',
-      title: 'Project monitoring status check',
-      moduleCode: 'project_monitoring',
-      status: 'under_review',
-      scoreOverall: 66,
-      complianceBand: 'C',
-      riskLevel: 'HIGH',
-      completionPercent: 48,
-    },
-    sections: [
-      {
-        _id: 'sec-3',
-        title: 'Schedule and resource tracking',
-        items: [
-          {
-            _id: 'item-4',
-            code: 'PM-01',
-            prompt: 'Are project milestones aligned with the current delivery plan?',
-            responseType: 'boolean',
-            weight: 3,
-            response: {
-              responseValue: 'No',
-              numericScore: 0,
-              immediateRisk: true,
-              severity: 'high',
-              remarks: 'Several milestones are overdue or missing.',
-            },
-            evidence: [],
-          },
-        ],
-      },
-    ],
-    findings: [
-      {
-        _id: 'finding-002',
-        title: 'Late milestone reporting',
-        detail: 'The project schedule has not been updated to reflect the last two delays.',
-        severity: 'high',
-        status: 'open',
-      },
-    ],
-    correctiveActions: [],
-    approvals: [],
-    reviewComments: [],
-    auditLogs: [
-      {
-        _id: 'audit-004',
-        action: 'Review initiated',
-        createdAt: Date.now() - 1000 * 60 * 120,
-      },
-    ],
-  },
-};
+  };
+}
+
+const DEV_SAMPLE_SEEDS: Array<{ id: string; title: string; moduleCode: string; status: string; answeredFraction: number; directorateCode: string; unitCode: string; ageMinutes: number }> = [
+  { id: 'insp-001', title: 'Armoury security evaluation — Sector Alpha',        moduleCode: 'armoury',                 status: 'in_progress', answeredFraction: 0.55, directorateCode: 'standard_evaluation', unitCode: 'Unit 14', ageMinutes: 30 },
+  { id: 'insp-002', title: 'JTF operational readiness — Q3 sweep',              moduleCode: 'jtf_readiness',           status: 'submitted',   answeredFraction: 1,    directorateCode: 'safety_manual',       unitCode: 'Unit 9',  ageMinutes: 90 },
+  { id: 'insp-003', title: 'DHQ Training Establishment audit — NDA wing',       moduleCode: 'training_establishments', status: 'under_review', answeredFraction: 0.8,  directorateCode: 'project_monitoring',  unitCode: 'Unit 21', ageMinutes: 120 },
+  { id: 'insp-004', title: 'Hazard & safety walk-through — Engineering block',  moduleCode: 'hazard_safety',           status: 'draft',       answeredFraction: 0.1,  directorateCode: 'safety_manual',       unitCode: 'Unit 3',  ageMinutes: 10 },
+  { id: 'insp-005', title: 'General security posture check — Perimeter',       moduleCode: 'general_security',        status: 'completed',   answeredFraction: 1,    directorateCode: 'standard_evaluation', unitCode: 'Unit 14', ageMinutes: 240 },
+];
+
+const DEV_INSPECTION_DETAILS: Record<string, InspectionDetail> = Object.fromEntries(
+  DEV_SAMPLE_SEEDS.map((seed) => [
+    seed.id,
+    buildDevInspectionFromTemplate(seed.id, seed.title, seed.moduleCode, seed.status, seed.answeredFraction),
+  ]),
+);
+
+const DEV_INSPECTIONS: InspectionSummary[] = DEV_SAMPLE_SEEDS.map((seed) => {
+  const detail = DEV_INSPECTION_DETAILS[seed.id].inspection;
+  return {
+    _id: seed.id,
+    title: seed.title,
+    moduleCode: seed.moduleCode,
+    status: seed.status,
+    scoreOverall: detail.scoreOverall,
+    complianceBand: detail.complianceBand,
+    riskLevel: detail.riskLevel,
+    completionPercent: detail.completionPercent,
+    directorateCode: seed.directorateCode,
+    unitCode: seed.unitCode,
+    updatedAt: Date.now() - 1000 * 60 * seed.ageMinutes,
+  };
+});
 
 const DEV_PENDING_APPROVALS = [
   {
@@ -347,56 +233,49 @@ function buildDevSummary(): DashboardSummary {
   };
 }
 
-function createDevInspectionDetail(id: string, title: string, moduleCode: string): InspectionDetail {
+function buildDevAnalytics() {
   return {
-    inspection: {
-      _id: id,
-      title,
-      moduleCode,
-      status: 'in_progress',
-      scoreOverall: 70,
-      complianceBand: 'C',
-      riskLevel: 'MEDIUM',
-      completionPercent: 10,
-    },
-    sections: [
-      {
-        _id: `${id}-sec-1`,
-        title: 'Core inspection checklist',
-        items: [
-          {
-            _id: `${id}-item-1`,
-            code: 'CHK-01',
-            prompt: 'Has the initial project brief been reviewed?',
-            responseType: 'boolean',
-            weight: 2,
-            response: null,
-            evidence: [],
-          },
-          {
-            _id: `${id}-item-2`,
-            code: 'CHK-02',
-            prompt: 'Are all stakeholders aware of the current project status?',
-            responseType: 'boolean',
-            weight: 2,
-            response: null,
-            evidence: [],
-          },
-        ],
-      },
-    ],
-    findings: [],
-    correctiveActions: [],
-    approvals: [],
-    reviewComments: [],
-    auditLogs: [
-      {
-        _id: `${id}-audit-1`,
-        action: 'Inspection created in dev mode',
-        createdAt: Date.now(),
-      },
-    ],
+    activeProjects: 4,
+    onHoldProjects: 1,
+    criticalHazards: 2,
+    pendingReviews: DEV_INSPECTIONS.filter((i) => i.status === 'submitted' || i.status === 'under_review').length,
+    overdueActions: 3,
+    openReports: 2,
+    complianceAvg: 78,
+    totalAssessments: DEV_INSPECTIONS.length,
+    inspectionModules: DEV_MODULES.length,
+    registeredProjects: 6,
+    complianceTrend: Array.from({ length: 8 }, (_, i) => ({
+      period: new Date(Date.now() - (7 - i) * 7 * 86400000).toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+      compliance: Math.max(55, Math.min(95, getDevMetricValue())),
+    })),
+    riskDistribution: DEV_MODULES.slice(0, 3).map((module, idx) => ({
+      directorate: module.moduleCode,
+      critical: idx,
+      high: idx + 1,
+      moderate: 2,
+      low: 4 - idx,
+    })),
+    modulePerformance: DEV_MODULES.map((module) => ({
+      module: module.title,
+      avgScore: Math.max(60, Math.min(95, getDevMetricValue())),
+      inspections: DEV_INSPECTIONS.filter((i) => i.moduleCode === module.moduleCode).length,
+      openActions: 1,
+    })),
+    recentActivity: DEV_INSPECTIONS.slice(0, 8).map((i) => ({
+      id: i._id,
+      action: `Inspection ${i.status.replace(/_/g, ' ')}`,
+      entityType: 'inspection',
+      moduleCode: i.moduleCode,
+      createdAt: i.updatedAt,
+    })),
   };
+}
+
+function createDevInspectionDetail(id: string, title: string, moduleCode: string): InspectionDetail {
+  // 0% answered — a freshly-started evaluation, pre-populated with the module's
+  // real question set (mirrors what create-inspection does against the live backend).
+  return buildDevInspectionFromTemplate(id, title, moduleCode, 'in_progress', 0);
 }
 
 const DEV_STATE = {
@@ -410,6 +289,8 @@ function devEdgeFunction<T>(functionName: string, options: EdgeFunctionOptions =
   switch (functionName) {
     case 'get-command-center':
       return Promise.resolve(buildDevSummary() as unknown as T);
+    case 'get-analytics':
+      return Promise.resolve(buildDevAnalytics() as unknown as T);
     case 'list-modules':
       return Promise.resolve(DEV_STATE.modules as unknown as T);
     case 'list-inspections': {
@@ -897,6 +778,10 @@ export async function approveRegistration(
 
 export async function getCommandCenterSummary() {
   return callEdgeFunction('get-command-center');
+}
+
+export async function getAnalyticsSummary() {
+  return callEdgeFunction<AnalyticsSummary>('get-analytics');
 }
 
 export async function getModules() {

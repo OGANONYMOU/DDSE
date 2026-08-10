@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS public.boq_submissions (
   currency         text        NOT NULL DEFAULT 'NGN',
   total_amount     numeric(15,2) GENERATED ALWAYS AS (0) STORED, -- overridden by trigger
   approved_total   numeric(15,2),
-  contractor_id    uuid        REFERENCES public.contractors(id) ON DELETE SET NULL,
+  contractor_id    uuid, -- FK added below, after public.contractors is created (I-3)
   submitted_by     uuid        NOT NULL REFERENCES auth.users(id),
   reviewed_by      uuid        REFERENCES auth.users(id),
   approved_by      uuid        REFERENCES auth.users(id),
@@ -218,6 +218,17 @@ CREATE POLICY contractor_evals_write ON public.contractor_evaluations FOR ALL US
 -- Add contractor FK on projects (was just a text field before)
 ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS contractor_id uuid REFERENCES public.contractors(id);
 
+-- Now that public.contractors exists, attach the FK deferred from I-2 above
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'boq_submissions_contractor_id_fkey'
+  ) THEN
+    ALTER TABLE public.boq_submissions
+      ADD CONSTRAINT boq_submissions_contractor_id_fkey
+      FOREIGN KEY (contractor_id) REFERENCES public.contractors(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
 -- ============================================================================
 -- I-4: SECTORS TABLE (replaces hardcoded DefenseHQ sectors)
 -- Readiness is computed live from inspections; sectors define the org scope
@@ -248,6 +259,13 @@ INSERT INTO public.sectors (code, name, directorate_code, alert_level, display_o
   ('SECTOR_CHARLIE','Sector Charlie — Strategic Engineering','DEME',  'Normal',    3),
   ('SECTOR_DELTA', 'Sector Delta — Hazard Containment',      'DEME',  'Normal',    4)
 ON CONFLICT (code) DO NOTHING;
+
+-- inspections score columns are added by I-7 below, but this view needs them now
+ALTER TABLE public.inspections
+  ADD COLUMN IF NOT EXISTS final_score       numeric(5,2),
+  ADD COLUMN IF NOT EXISTS risk_band         text CHECK (risk_band IN ('A','B','C','D','F')),
+  ADD COLUMN IF NOT EXISTS score_updated_at  timestamptz,
+  ADD COLUMN IF NOT EXISTS template_version  integer DEFAULT 1;
 
 -- View: live sector readiness from real inspection scores
 CREATE OR REPLACE VIEW public.sector_readiness AS

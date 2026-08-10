@@ -2,7 +2,6 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { MOCK_COMPLIANCE_TREND } from '../../lib/mock-data';
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#0d1117',
@@ -13,16 +12,20 @@ const TOOLTIP_STYLE = {
   color:           '#94a3b8',
 };
 
-export default function ComplianceChart() {
+interface Props {
+  data: Array<{ period: string; compliance: number | null }>;
+}
+
+export default function ComplianceChart({ data }: Props) {
   return (
     <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
       <div className="mb-4">
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Compliance Trend</p>
-        <p className="mt-0.5 text-[9px] font-mono text-slate-600 uppercase">Monthly average compliance score — Jan 2025 to Oct 2025</p>
+        <p className="mt-0.5 text-[9px] font-mono text-slate-600 uppercase">Weekly average inspection score — last 8 weeks</p>
       </div>
       <div className="h-[200px]">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={MOCK_COMPLIANCE_TREND} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+          <AreaChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="complianceGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%"  stopColor="#38bdf8" stopOpacity={0.15} />
@@ -31,20 +34,21 @@ export default function ComplianceChart() {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(51,65,85,0.4)" />
             <XAxis
-              dataKey="month"
+              dataKey="period"
               tick={{ fontSize: 9, fill: '#475569', fontFamily: 'monospace' }}
               axisLine={false} tickLine={false}
             />
             <YAxis
-              domain={[50, 100]}
+              domain={[0, 100]}
               tick={{ fontSize: 9, fill: '#475569', fontFamily: 'monospace' }}
               axisLine={false} tickLine={false}
             />
-            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [`${v}%`, 'Compliance']} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [v === null ? 'No data' : `${v}%`, 'Compliance']} />
             <Area
               type="monotone" dataKey="compliance"
               stroke="#38bdf8" strokeWidth={2}
               fill="url(#complianceGrad)"
+              connectNulls
               dot={{ r: 3, fill: '#38bdf8', strokeWidth: 0 }}
               activeDot={{ r: 4, fill: '#38bdf8' }}
             />

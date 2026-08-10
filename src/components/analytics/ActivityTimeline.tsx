@@ -1,5 +1,4 @@
 import { FolderKanban, ClipboardCheck, ShieldAlert, FileBarChart2, Users } from 'lucide-react';
-import { MOCK_DASHBOARD_SUMMARY } from '../../lib/mock-data';
 
 type EntityType = 'inspection' | 'safety' | 'project' | 'report' | 'personnel';
 
@@ -28,20 +27,34 @@ function timeAgo(ts: number): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+interface Activity {
+  id: string;
+  action: string;
+  entityType: string;
+  moduleCode?: string;
+  createdAt: number;
+  actorRoleCode?: string;
+}
+
 interface Props {
+  activities: Activity[];
   limit?: number;
 }
 
-export default function ActivityTimeline({ limit = 8 }: Props) {
-  const activities = (MOCK_DASHBOARD_SUMMARY.recentActivity ?? []).slice(0, limit);
+export default function ActivityTimeline({ activities, limit = 8 }: Props) {
+  const items = (activities ?? []).slice(0, limit);
+
+  if (items.length === 0) {
+    return <p className="py-8 text-center text-[10px] font-mono uppercase text-slate-600">No recent activity</p>;
+  }
 
   return (
     <div className="space-y-3">
-      {activities.map((act, idx) => {
+      {items.map((act, idx) => {
         const type = act.entityType as EntityType;
         const Icon  = ICON_MAP[type] ?? ClipboardCheck;
         const color = COLOR_MAP[type] ?? COLOR_MAP.personnel;
-        const isLast = idx === activities.length - 1;
+        const isLast = idx === items.length - 1;
 
         return (
           <div key={act.id} className="flex gap-3">

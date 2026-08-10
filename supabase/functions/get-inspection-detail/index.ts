@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import { withCors } from '../_helpers/cors.ts'
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) {
     return new Response(
@@ -56,13 +57,9 @@ Deno.serve(async (req) => {
     ] = await Promise.all([
       supabase
         .from('inspection_sections')
-        .select(`
-          id, title, display_order,
-          inspection_items(
-            id, code, prompt, weight, response_type,
-            inspection_responses(response_value, numeric_score, severity, immediate_risk, remarks)
-          )
-        `)
+        // PostgREST silently drops nested resource embeds if the select string has
+        // embedded newlines/indentation — keep this on one line.
+        .select('id, title, display_order, inspection_items(id, code, prompt, weight, response_type, inspection_responses(response_value, numeric_score, severity, immediate_risk, remarks))')
         .eq('inspection_id', inspectionId)
         .order('display_order'),
       supabase
@@ -135,6 +132,21 @@ Deno.serve(async (req) => {
       stopWorkIssued: c.stop_work_issued,
     }))
 
+    const totalItems = sections.reduce((sum: number, s: any) => sum + s.items.length, 0)
+    const answeredItems = sections.reduce(
+      (sum: number, s: any) => sum + s.items.filter((i: any) => i.response !== null).length,
+      0
+    )
+    const completionPercent = totalItems > 0 ? Math.round((answeredItems / totalItems) * 100) : 0
+
+    const riskLevel = inspection.risk_band === 'D' || inspection.risk_band === 'F'
+      ? 'HIGH'
+      : inspection.risk_band === 'C'
+      ? 'MEDIUM'
+      : inspection.risk_band
+      ? 'LOW'
+      : 'LOW'
+
     const formattedComments = (reviewComments ?? []).map((c: any) => ({
       _id: c.id,
       findingId: c.finding_id,
@@ -152,10 +164,10 @@ Deno.serve(async (req) => {
           title: inspection.title,
           moduleCode: inspection.module_code,
           status: inspection.status,
-          scoreOverall: 0,
-          complianceBand: 'N/A',
-          riskLevel: 'LOW',
-          completionPercent: 0,
+          scoreOverall: Number(inspection.final_score ?? 0),
+          complianceBand: inspection.risk_band ?? 'N/A',
+          riskLevel,
+          completionPercent,
           directorateCode: inspection.directorate_code,
         },
         sections,
@@ -173,4 +185,4 @@ Deno.serve(async (req) => {
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
-})
+}))

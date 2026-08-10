@@ -2,6 +2,7 @@
 // I-13: Version tracking — supersedes_id for document revision control.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import { withCors } from '../_helpers/cors.ts'
 
 async function computeSHA256(buffer: ArrayBuffer): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
@@ -10,7 +11,7 @@ async function computeSHA256(buffer: ArrayBuffer): Promise<string> {
     .join('')
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
   }
@@ -151,4 +152,4 @@ Deno.serve(async (req) => {
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
-})
+}))

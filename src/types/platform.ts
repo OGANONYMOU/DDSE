@@ -75,6 +75,30 @@ export interface DashboardSummary {
   }>;
 }
 
+export interface AnalyticsSummary {
+  activeProjects: number;
+  onHoldProjects: number;
+  criticalHazards: number;
+  pendingReviews: number;
+  overdueActions: number;
+  openReports: number;
+  complianceAvg: number;
+  totalAssessments: number;
+  inspectionModules: number;
+  registeredProjects: number;
+  complianceTrend: Array<{ period: string; compliance: number | null }>;
+  riskDistribution: Array<{ directorate: string; critical: number; high: number; moderate: number; low: number }>;
+  modulePerformance: Array<{ module: string; avgScore: number; inspections: number; openActions: number }>;
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    entityType: string;
+    moduleCode?: string;
+    createdAt: number;
+    actorRoleCode?: string;
+  }>;
+}
+
 export interface ModuleDefinition {
   id: string;
   moduleCode: string;

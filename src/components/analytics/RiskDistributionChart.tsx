@@ -2,7 +2,6 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { MOCK_RISK_DISTRIBUTION, MOCK_MODULE_PERFORMANCE } from '../../lib/mock-data';
 
 const TOOLTIP_STYLE = {
   backgroundColor: '#0d1117',
@@ -15,7 +14,12 @@ const TOOLTIP_STYLE = {
 
 const LEGEND_STYLE = { fontSize: 9, fontFamily: 'monospace' };
 
-export default function RiskDistributionChart() {
+interface Props {
+  riskDistribution: Array<{ directorate: string; critical: number; high: number; moderate: number; low: number }>;
+  modulePerformance: Array<{ module: string; avgScore: number; inspections: number; openActions: number }>;
+}
+
+export default function RiskDistributionChart({ riskDistribution, modulePerformance }: Props) {
   return (
     <div className="space-y-4">
       {/* Risk by directorate */}
@@ -24,21 +28,25 @@ export default function RiskDistributionChart() {
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Hazard Risk Distribution by Directorate</p>
           <p className="mt-0.5 text-[9px] font-mono text-slate-600 uppercase">Count of assessments per risk level</p>
         </div>
-        <div className="h-[160px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={MOCK_RISK_DISTRIBUTION} margin={{ top: 0, right: 5, left: -20, bottom: 0 }} barSize={14}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(51,65,85,0.4)" />
-              <XAxis dataKey="directorate" tick={{ fontSize: 9, fill: '#475569', fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: '#475569', fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={TOOLTIP_STYLE} />
-              <Legend wrapperStyle={LEGEND_STYLE} />
-              <Bar dataKey="critical"  fill="#f43f5e" name="Critical" radius={[2,2,0,0]} />
-              <Bar dataKey="high"      fill="#fb923c" name="High"     radius={[2,2,0,0]} />
-              <Bar dataKey="moderate"  fill="#f59e0b" name="Moderate" radius={[2,2,0,0]} />
-              <Bar dataKey="low"       fill="#10b981" name="Low"      radius={[2,2,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {riskDistribution.length === 0 ? (
+          <p className="py-8 text-center text-[10px] font-mono uppercase text-slate-600">No hazard assessments recorded yet</p>
+        ) : (
+          <div className="h-[160px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={riskDistribution} margin={{ top: 0, right: 5, left: -20, bottom: 0 }} barSize={14}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(51,65,85,0.4)" />
+                <XAxis dataKey="directorate" tick={{ fontSize: 9, fill: '#475569', fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 9, fill: '#475569', fontFamily: 'monospace' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
+                <Legend wrapperStyle={LEGEND_STYLE} />
+                <Bar dataKey="critical"  fill="#f43f5e" name="Critical" radius={[2,2,0,0]} />
+                <Bar dataKey="high"      fill="#fb923c" name="High"     radius={[2,2,0,0]} />
+                <Bar dataKey="moderate"  fill="#f59e0b" name="Moderate" radius={[2,2,0,0]} />
+                <Bar dataKey="low"       fill="#10b981" name="Low"      radius={[2,2,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {/* Module performance horizontal bars */}
@@ -48,7 +56,7 @@ export default function RiskDistributionChart() {
           <p className="mt-0.5 text-[9px] font-mono text-slate-600 uppercase">Average inspection score by module</p>
         </div>
         <div className="space-y-3">
-          {MOCK_MODULE_PERFORMANCE.map((m) => {
+          {modulePerformance.map((m) => {
             const color = m.avgScore >= 85 ? 'bg-emerald-500' : m.avgScore >= 70 ? 'bg-sky-500' : m.avgScore >= 55 ? 'bg-amber-500' : 'bg-rose-500';
             return (
               <div key={m.module}>

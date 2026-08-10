@@ -118,6 +118,12 @@ export default function AuthPage({
     if (!nav.includes(e.key) && !/^\d$/.test(e.key)) e.preventDefault();
   }
 
+  function alphanumericOnly(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.ctrlKey || e.metaKey) return;
+    const nav = ['Backspace','Delete','Tab','ArrowLeft','ArrowRight','Home','End','Enter'];
+    if (!nav.includes(e.key) && !/^[a-zA-Z0-9]$/.test(e.key)) e.preventDefault();
+  }
+
   function setRegField<K extends keyof RegistrationFields>(field: K, value: string) {
     setReg((r) => ({ ...r, [field]: value }));
     setRegErrs((p) => { const n = { ...p }; delete n[field]; return n; });
@@ -455,19 +461,19 @@ export default function AuthPage({
                   <input
                     className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
                     placeholder="Enter your service number"
-                    inputMode="numeric"
+                    inputMode="text"
                     autoComplete="username"
                     value={signIn.serviceNumber}
-                    onKeyDown={numbersOnly}
+                    onKeyDown={alphanumericOnly}
                     onPaste={(e) => {
                       e.preventDefault();
                       setSignIn((s) => ({
                         ...s,
-                        serviceNumber: e.clipboardData.getData('text').replace(/\D/g, ''),
+                        serviceNumber: e.clipboardData.getData('text').replace(/[^a-zA-Z0-9]/g, ''),
                       }));
                     }}
                     onChange={(e) =>
-                      setSignIn((s) => ({ ...s, serviceNumber: e.target.value.replace(/\D/g, '') }))
+                      setSignIn((s) => ({ ...s, serviceNumber: e.target.value.replace(/[^a-zA-Z0-9]/g, '') }))
                     }
                     required
                   />
@@ -555,15 +561,15 @@ export default function AuthPage({
                   >
                     <input
                       className="flex-1 min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
-                      placeholder="Digits only"
-                      inputMode="numeric"
+                      placeholder="Letters and numbers"
+                      inputMode="text"
                       value={reg.serviceNumber}
-                      onKeyDown={numbersOnly}
+                      onKeyDown={alphanumericOnly}
                       onPaste={(e) => {
                         e.preventDefault();
-                        setRegField('serviceNumber', e.clipboardData.getData('text').replace(/\D/g, ''));
+                        setRegField('serviceNumber', e.clipboardData.getData('text').replace(/[^a-zA-Z0-9]/g, ''));
                       }}
-                      onChange={(e) => setRegField('serviceNumber', e.target.value.replace(/\D/g, ''))}
+                      onChange={(e) => setRegField('serviceNumber', e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
                       onBlur={() => blurRegField('serviceNumber')}
                     />
                   </GlassField>
@@ -717,14 +723,14 @@ export default function AuthPage({
                   <input
                     className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
                     placeholder="Enter your service number"
-                    inputMode="numeric"
+                    inputMode="text"
                     value={forgot.serviceNumber}
-                    onKeyDown={numbersOnly}
+                    onKeyDown={alphanumericOnly}
                     onPaste={(e) => {
                       e.preventDefault();
-                      setForgotField('serviceNumber', e.clipboardData.getData('text').replace(/\D/g, ''));
+                      setForgotField('serviceNumber', e.clipboardData.getData('text').replace(/[^a-zA-Z0-9]/g, ''));
                     }}
-                    onChange={(e) => setForgotField('serviceNumber', e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setForgotField('serviceNumber', e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
                     onBlur={() => blurForgotField('serviceNumber')}
                   />
                 </GlassField>

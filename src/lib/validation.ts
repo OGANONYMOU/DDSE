@@ -65,7 +65,8 @@ export function validatePhone(phone: string): string | null {
 
 export function validateServiceNumber(sn: string): string | null {
   if (!sn) return 'Service number is required.';
-  if (sn.length < 4) return 'Must be at least 4 digits.';
+  if (sn.length < 4) return 'Must be at least 4 characters.';
+  if (!/^[a-zA-Z0-9]+$/.test(sn)) return 'Letters and numbers only, no spaces or symbols.';
   return null;
 }
 

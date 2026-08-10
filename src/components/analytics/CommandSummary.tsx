@@ -1,5 +1,4 @@
 import { ShieldAlert, FolderKanban, ClipboardCheck, AlertCircle, Clock } from 'lucide-react';
-import { MOCK_PROJECTS, MOCK_HAZARD_ASSESSMENTS, MOCK_INSPECTIONS } from '../../lib/mock-data';
 
 interface KPI {
   label:     string;
@@ -9,19 +8,21 @@ interface KPI {
   subtext:   string;
 }
 
-export default function CommandSummary() {
-  const activeProjects = MOCK_PROJECTS.filter((p) => p.status === 'in_progress').length;
-  const criticalHazards = MOCK_HAZARD_ASSESSMENTS.filter((h) => h.riskLevel === 'CRITICAL').length;
-  const pendingInspections = MOCK_INSPECTIONS.filter((i) => i.status === 'in_review' || i.status === 'submitted').length;
-  const overdueActions = MOCK_HAZARD_ASSESSMENTS.flatMap((h) => h.correctiveActions).filter((a) => a.status === 'pending').length;
-  const onHold = MOCK_PROJECTS.filter((p) => p.status === 'on_hold').length;
+interface Props {
+  activeProjects:  number;
+  onHoldProjects:  number;
+  criticalHazards: number;
+  pendingReviews:  number;
+  overdueActions:  number;
+}
 
+export default function CommandSummary({ activeProjects, onHoldProjects, criticalHazards, pendingReviews, overdueActions }: Props) {
   const kpis: KPI[] = [
-    { label: 'Active Projects',     value: activeProjects,     color: 'text-sky-400',     icon: FolderKanban,  subtext: `${onHold} on hold` },
-    { label: 'Critical Hazards',    value: criticalHazards,    color: 'text-rose-400',    icon: ShieldAlert,   subtext: 'Require escalation' },
-    { label: 'Pending Reviews',     value: pendingInspections, color: 'text-amber-400',   icon: ClipboardCheck,subtext: 'Awaiting sign-off' },
-    { label: 'Open Actions',        value: overdueActions,     color: 'text-amber-300',   icon: AlertCircle,   subtext: 'Corrective actions' },
-    { label: 'On Hold Projects',    value: onHold,             color: 'text-slate-400',   icon: Clock,         subtext: 'Suspended works' },
+    { label: 'Active Projects',     value: activeProjects,  color: 'text-sky-400',     icon: FolderKanban,  subtext: `${onHoldProjects} on hold` },
+    { label: 'Critical Hazards',    value: criticalHazards, color: 'text-rose-400',    icon: ShieldAlert,   subtext: 'Require escalation' },
+    { label: 'Pending Reviews',     value: pendingReviews,  color: 'text-amber-400',   icon: ClipboardCheck,subtext: 'Awaiting sign-off' },
+    { label: 'Open Actions',        value: overdueActions,  color: 'text-amber-300',   icon: AlertCircle,   subtext: 'Corrective actions' },
+    { label: 'On Hold Projects',    value: onHoldProjects,  color: 'text-slate-400',   icon: Clock,         subtext: 'Suspended works' },
   ];
 
   return (

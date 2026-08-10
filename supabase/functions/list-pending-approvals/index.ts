@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import { withCors } from '../_helpers/cors.ts'
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) {
     return new Response(
@@ -44,15 +45,9 @@ Deno.serve(async (req) => {
 
     const { data: approvals, error } = await supabase
       .from('registration_approvals')
-      .select(`
-        id,
-        user_id,
-        requested_role_code,
-        directorate_code,
-        status,
-        created_at,
-        user_profiles!inner(full_name, service_number)
-      `)
+      // PostgREST silently drops nested resource embeds if the select string has
+      // embedded newlines/indentation — keep this on one line.
+      .select('id, user_id, requested_role_code, directorate_code, status, created_at, user_profiles!inner(full_name, service_number)')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
 
@@ -83,4 +78,4 @@ Deno.serve(async (req) => {
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
-})
+}))
