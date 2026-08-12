@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ClipboardCheck, Plus, Fingerprint, Layers3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
@@ -10,18 +9,29 @@ import {
   listInspections,
 } from '../lib/api';
 import type { InspectionDetail, InspectionSummary, ModuleDefinition } from '../types/platform';
+import { statusLabel, statusColor, scoreColor } from '../lib/inspectionStatus';
 import TacticalAssessment from '../components/TacticalAssessment';
 import PageHeader from '../components/ui/PageHeader';
 
+function timeAgo(ts: number): string {
+  if (!ts) return '';
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default function InspectionsPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [modules, setModules]          = useState<ModuleDefinition[]>([]);
   const [inspections, setInspections]  = useState<InspectionSummary[]>([]);
   const [activeModule, setActiveModule]= useState('');
   const [selectedId, setSelectedId]   = useState<string | null>(null);
   const [detail, setDetail]            = useState<InspectionDetail | null>(null);
   const [newTitle, setNewTitle]        = useState('');
+  const [createModule, setCreateModule] = useState('');
   const [loading, setLoading]          = useState(true);
 
   const load = useCallback(async (moduleCode: string) => {
@@ -39,7 +49,6 @@ export default function InspectionsPage() {
     })) as ModuleDefinition[];
 
     setModules(normalized);
-    if (!moduleCode && normalized.length > 0) setActiveModule(normalized[0].moduleCode);
 
     const mapped = (inspList as unknown as Array<Record<string, unknown>>).map((i) => ({
       _id:               String(i._id ?? i.id ?? ''),
@@ -55,49 +64,55 @@ export default function InspectionsPage() {
       updatedAt:         Number(i.updatedAt ?? 0),
     }));
 
-    setInspections(mapped);
+    setInspections(mapped.sort((a, b) => b.updatedAt - a.updatedAt));
   }, []);
 
   useEffect(() => {
-    setLoading(true);
+    let cancelled = false;
     load(activeModule)
       .catch((err: Error) => toast.error(err.message))
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [activeModule, load]);
 
   useEffect(() => {
     if (!selectedId) { setDetail(null); return; }
+    let cancelled = false;
     getInspectionDetail(selectedId)
-      .then((d) => setDetail(d as InspectionDetail))
+      .then((d) => { if (!cancelled) setDetail(d as InspectionDetail); })
       .catch((err: Error) => toast.error(err.message));
+    return () => { cancelled = true; };
   }, [selectedId]);
 
-  const activeModuleDef = useMemo(
-    () => modules.find((m) => m.moduleCode === activeModule) ?? null,
-    [modules, activeModule]
+  const moduleTitleByCode = useMemo(
+    () => Object.fromEntries(modules.map((m) => [m.moduleCode, m.title])),
+    [modules],
   );
 
+  const effectiveCreateModule = createModule || (activeModule || modules[0]?.moduleCode || '');
+  const createModuleDef = modules.find((m) => m.moduleCode === effectiveCreateModule) ?? null;
+
   async function handleCreate() {
-    if (!newTitle.trim()) { toast.error('Enter a title.'); return; }
-    if (!activeModule)    { toast.error('Select a module.'); return; }
+    if (!newTitle.trim())        { toast.error('Enter a title for the evaluation.'); return; }
+    if (!effectiveCreateModule)  { toast.error('Choose a department first.'); return; }
     try {
       const id = await createInspection({
-        moduleCode:      activeModule,
+        moduleCode:      effectiveCreateModule,
         title:           newTitle.trim(),
         directorateCode: user.directorateCode,
       });
       setNewTitle('');
       await load(activeModule);
       setSelectedId(id);
-      toast.success('Inspection initialized.');
+      toast.success('Evaluation started.');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not create inspection.');
+      toast.error(e instanceof Error ? e.message : 'Could not start evaluation.');
     }
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Inspections" subtitle="Tactical audit registry & assessment interface" />
+      <PageHeader title="Inspections" subtitle="Start, track and complete departmental evaluations" />
 
       {loading ? (
         <div className="flex h-64 items-center justify-center rounded-xl border border-slate-800/60 bg-slate-950/40">
@@ -105,57 +120,84 @@ export default function InspectionsPage() {
         </div>
       ) : (
         <div className="grid gap-5 lg:grid-cols-12">
-          {/* Left: list panel */}
+          {/* Left: filters + list */}
           <div className="lg:col-span-4 space-y-4">
-            <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 space-y-4">
+            <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-4 space-y-4">
               <div>
-                <p className="mb-2 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">Module</p>
-                <div className="flex flex-wrap gap-1.5">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Department</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setActiveModule('')}
+                    className={`rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
+                      activeModule === ''
+                        ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                        : 'border border-transparent bg-slate-900/40 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    All Departments
+                  </button>
                   {modules.map((mod) => (
                     <button
                       key={mod.moduleCode} type="button"
                       onClick={() => setActiveModule(mod.moduleCode)}
-                      className={`rounded-md px-2.5 py-1 text-[9px] font-black uppercase tracking-wider transition ${
+                      title={mod.title}
+                      className={`truncate rounded-lg px-2.5 py-2 text-xs font-semibold transition ${
                         activeModule === mod.moduleCode
-                          ? 'bg-sky-500/15 text-sky-300 border border-sky-500/25'
-                          : 'border border-transparent text-slate-500 hover:text-slate-300'
+                          ? 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                          : 'border border-transparent bg-slate-900/40 text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      {mod.title.split(' ')[0]}
+                      {mod.title}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div className="border-t border-slate-800/40 pt-4">
-                <p className="mb-2 text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">New Inspection</p>
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-[11px] font-mono text-white placeholder:text-slate-600 outline-none focus:border-sky-500/40"
-                    placeholder={activeModuleDef ? `New ${activeModuleDef.title}...` : 'Description...'}
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') void handleCreate(); }}
-                  />
-                  <button
-                    type="button" onClick={() => void handleCreate()}
-                    className="flex items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 text-[10px] font-black uppercase text-sky-300 transition hover:bg-sky-500/15"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Start New Evaluation</p>
+                <div className="space-y-2">
+                  {!activeModule && (
+                    <select
+                      value={effectiveCreateModule}
+                      onChange={(e) => setCreateModule(e.target.value)}
+                      className="w-full rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/40"
+                      style={{ colorScheme: 'dark' }}
+                    >
+                      <option value="" disabled>Choose a department…</option>
+                      {modules.map((m) => (
+                        <option key={m.moduleCode} value={m.moduleCode}>{m.title}</option>
+                      ))}
+                    </select>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 min-w-0 rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-sm text-white placeholder:text-slate-600 outline-none focus:border-sky-500/40"
+                      placeholder={createModuleDef ? `e.g. ${createModuleDef.title} — Q3 review` : 'Evaluation title…'}
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') void handleCreate(); }}
+                    />
+                    <button
+                      type="button" onClick={() => void handleCreate()}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 text-sm font-semibold text-sky-300 transition hover:bg-sky-500/15"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div className="border-t border-slate-800/40 pt-4 space-y-2 max-h-[420px] overflow-y-auto pr-0.5">
+              <div className="border-t border-slate-800/40 pt-4 space-y-2 max-h-[440px] overflow-y-auto pr-0.5">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 flex items-center gap-1.5">
-                    <Layers3 className="h-3 w-3" /> Dossiers
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                    <Layers3 className="h-3.5 w-3.5" /> Evaluations
                   </p>
-                  <span className="text-[9px] font-mono text-slate-600">{inspections.length}</span>
+                  <span className="text-xs text-slate-600">{inspections.length}</span>
                 </div>
 
                 {inspections.length === 0 ? (
-                  <p className="py-6 text-center text-[11px] font-mono uppercase text-slate-600">No inspections</p>
+                  <p className="py-6 text-center text-sm text-slate-600">No evaluations yet — start one above.</p>
                 ) : (
                   inspections.map((ins) => {
                     const isActive = selectedId === ins._id;
@@ -164,17 +206,23 @@ export default function InspectionsPage() {
                         key={ins._id} type="button"
                         onClick={() => setSelectedId(ins._id)}
                         className={`w-full rounded-lg border p-3.5 text-left transition-all ${
-                          isActive ? 'border-sky-500/30 bg-sky-950/60' : 'border-slate-800/60 bg-slate-900/20 hover:border-slate-700/60'
+                          isActive ? 'border-sky-500/40 bg-sky-950/60' : 'border-slate-800/60 bg-slate-900/20 hover:border-slate-700/60'
                         }`}
                       >
-                        <div className="flex items-center justify-between text-[9px] font-mono text-slate-500">
-                          <span>{ins.complianceBand}</span>
-                          <span className={`h-1.5 w-1.5 rounded-full ${ins.status === 'completed' || ins.status === 'approved' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                        <div className="flex items-center justify-between gap-2">
+                          {!activeModule && (
+                            <span className="truncate text-[11px] font-medium text-slate-500">
+                              {moduleTitleByCode[ins.moduleCode] ?? ins.moduleCode}
+                            </span>
+                          )}
+                          <span className={`ml-auto shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusColor(ins.status)}`}>
+                            {statusLabel(ins.status)}
+                          </span>
                         </div>
-                        <p className="mt-1 text-[11px] font-bold uppercase tracking-wide text-white line-clamp-1">{ins.title}</p>
-                        <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-slate-500 border-t border-slate-800/40 pt-2">
-                          <span>Score: {ins.scoreOverall}%</span>
-                          <span className="uppercase">{ins.status}</span>
+                        <p className="mt-1.5 text-sm font-semibold text-white line-clamp-1">{ins.title}</p>
+                        <div className="mt-2 flex items-center justify-between text-xs text-slate-500 border-t border-slate-800/40 pt-2">
+                          <span className={`font-semibold ${scoreColor(ins.scoreOverall)}`}>{ins.scoreOverall}% score</span>
+                          <span>{timeAgo(ins.updatedAt)}</span>
                         </div>
                       </button>
                     );
@@ -199,8 +247,8 @@ export default function InspectionsPage() {
               <div className="flex h-[520px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-800/60 bg-slate-950/40 text-center gap-3">
                 <Fingerprint className="h-12 w-12 text-sky-500/20" />
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 font-mono">Select an inspection</p>
-                  <p className="mt-1 text-[10px] font-mono text-slate-700 uppercase">Choose a dossier from the left to open the evaluation interface</p>
+                  <p className="text-sm font-semibold text-slate-400">Select an evaluation</p>
+                  <p className="mt-1 text-sm text-slate-600">Choose one from the list, or start a new one for a department.</p>
                 </div>
               </div>
             )}
