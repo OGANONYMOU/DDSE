@@ -1,7 +1,7 @@
 // Projects service — fully backed by Supabase (replaces MOCK_PROJECTS)
 
 import { supabase } from '../lib/supabase';
-import type { Project, ProjectDetail, ProjectFilter, ProjectMilestone, ProjectDocument, ProjectRiskFlag, ProjectReview, BudgetCategory } from '../types/projects';
+import type { Project, ProjectDetail, ProjectFilter, ProjectMilestone, ProjectDocument, ProjectRiskFlag, ProjectReview, BudgetCategory, DocType } from '../types/projects';
 import { logAuditEvent } from './auditLogger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -26,6 +26,8 @@ function dbToProject(row: Record<string, unknown>): Project {
     endDate:           row.end_date ? String(row.end_date) : null,
     classification:    String(row.classification ?? 'INTERNAL'),
     finalScore:        row.final_score != null ? Number(row.final_score) : null,
+    reason:            row.reason ? String(row.reason) : null,
+    summary:           row.summary ? String(row.summary) : null,
     notes:             row.notes ? String(row.notes) : null,
     createdBy:         String(row.created_by ?? ''),
     updatedBy:         row.updated_by ? String(row.updated_by) : null,
@@ -198,6 +200,8 @@ export async function createProject(
       start_date:         payload.startDate,
       end_date:           payload.endDate,
       classification:     payload.classification,
+      reason:             payload.reason,
+      summary:            payload.summary,
       notes:              payload.notes,
       created_by:         userId,
     })
@@ -212,6 +216,63 @@ export async function createProject(
   });
 
   return dbToProject(data as Record<string, unknown>);
+}
+
+async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const hash = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function uploadProjectDocument(
+  projectId: string,
+  file: File,
+  title: string,
+  userId: string,
+  docType: DocType = 'Other',
+): Promise<ProjectDocument> {
+  const timestamp   = Date.now();
+  const safeName     = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `${projectId}/${timestamp}-${safeName}`;
+
+  const buffer = await file.arrayBuffer();
+  const [{ error: uploadError }, sha256Hash] = await Promise.all([
+    supabase.storage.from('project-documents').upload(storagePath, buffer, { contentType: file.type }),
+    sha256Hex(buffer),
+  ]);
+  if (uploadError) throw uploadError;
+
+  const { data, error } = await supabase
+    .from('project_documents')
+    .insert({
+      project_id:   projectId,
+      title,
+      doc_type:     docType,
+      file_name:    file.name,
+      file_path:    storagePath,
+      content_type: file.type,
+      size_bytes:   file.size,
+      sha256_hash:  sha256Hash,
+      uploaded_by:  userId,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+
+  await logAuditEvent('document.uploaded', {
+    entityType: 'project',
+    entityId:   projectId,
+    metadata:   { fileName: file.name },
+  });
+
+  return dbToDocument(data as Record<string, unknown>);
+}
+
+export async function getProjectDocumentDownloadUrl(filePath: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from('project-documents')
+    .createSignedUrl(filePath, 60 * 10);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 export async function updateProject(

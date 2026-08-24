@@ -227,6 +227,31 @@ export async function publishBroadcast(
       if (!error && data) {
         broadcast.id = data.id;
       }
+      // Trigger server-side distribution to recipients via edge function
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        if (token && SUPABASE_URL) {
+          // Call edge function to create notifications for recipients (service-role required server-side)
+          await fetch(`${SUPABASE_URL}/functions/v1/publish-broadcast`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              broadcastId: broadcast.id,
+              subject: broadcast.subject,
+              body: broadcast.body,
+              priority: broadcast.priority,
+              targetRoles: broadcast.targetRoles,
+            }),
+          }).catch(() => {});
+        }
+      } catch {
+        // non-fatal
+      }
     } catch {
       // Proceed with local mock
     }

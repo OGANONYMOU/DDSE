@@ -107,6 +107,30 @@ export interface ModuleDefinition {
   description: string;
 }
 
+export type InspectionQuestionResponseType = 'yes_no' | 'score_5' | 'narrative' | 'checklist';
+
+export interface InspectionTemplateItem {
+  code: string;
+  prompt: string;
+  responseType: InspectionQuestionResponseType;
+  weight: number;
+}
+
+export interface InspectionTemplateSection {
+  title: string;
+  items: InspectionTemplateItem[];
+}
+
+export interface InspectionTemplate {
+  sections: InspectionTemplateSection[];
+}
+
+export interface ModuleTemplateDefinition extends ModuleDefinition {
+  version: number;
+  updatedAt?: number;
+  template: InspectionTemplate;
+}
+
 export interface InspectionSummary {
   _id: string;
   title: string;
@@ -118,6 +142,8 @@ export interface InspectionSummary {
   completionPercent: number;
   directorateCode: string;
   unitCode: string;
+  createdBy?: string;
+  createdAt?: number;
   updatedAt: number;
 }
 

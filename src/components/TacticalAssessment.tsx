@@ -9,6 +9,7 @@ import {
 } from '../lib/api';
 import { STATUS_FLOW, statusLabel, statusColor, scoreColor } from '../lib/inspectionStatus';
 import type { InspectionDetail } from '../types/platform';
+import { useAuth } from '../context/AuthContext';
 
 interface TacticalAssessmentProps {
   detail: InspectionDetail;
@@ -16,6 +17,7 @@ interface TacticalAssessmentProps {
 }
 
 export default function TacticalAssessment({ detail, onChange }: TacticalAssessmentProps) {
+  const { user } = useAuth();
   const [activeSection, setActiveSection] = useState<string | null>(detail.sections[0]?._id ?? null);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [findingDraft, setFindingDraft] = useState<Record<string, { title: string; detail: string }>>({});
@@ -24,6 +26,9 @@ export default function TacticalAssessment({ detail, onChange }: TacticalAssessm
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   const flow = STATUS_FLOW[detail.inspection.status];
+  const isSuperAdmin = user.isPlatformOwner || user.roleCode === 'platform_owner' || user.roleCode === 'super_admin';
+  const officerStatuses = new Set(['draft', 'in_progress', 'correction_required', 'rejected']);
+  const canUseStatusFlow = Boolean(flow?.next && (isSuperAdmin || officerStatuses.has(detail.inspection.status)));
 
   async function saveResponse(
     item: typeof detail.sections[0]['items'][0],
@@ -75,7 +80,7 @@ export default function TacticalAssessment({ detail, onChange }: TacticalAssessm
             <p className="mt-1 text-xs text-slate-500">Dossier ID: {detail.inspection._id.split(':')[0].slice(0, 8)}</p>
           </div>
 
-          {flow?.next && (
+          {canUseStatusFlow && flow?.next && (
             <button
               onClick={() => void handleTransition(flow.next!)}
               disabled={isTransitioning}

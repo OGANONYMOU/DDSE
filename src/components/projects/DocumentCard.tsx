@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { FileText, ImageIcon, FileBarChart2, Award, MapPin, ScrollText, File } from 'lucide-react';
+import { toast } from 'sonner';
+import { getProjectDocumentDownloadUrl } from '../../services/projects';
 import type { ProjectDocument, DocType } from '../../types/projects';
 
 const TYPE_ICON: Record<DocType, React.ElementType> = {
@@ -36,6 +39,19 @@ export default function DocumentCard({ document: doc }: Props) {
   const Icon   = TYPE_ICON[doc.docType];
   const colors = TYPE_COLOR[doc.docType];
   const [iconColor, borderColor, bgColor] = colors.split(' ');
+  const [opening, setOpening] = useState(false);
+
+  async function handleView() {
+    setOpening(true);
+    try {
+      const url = await getProjectDocumentDownloadUrl(doc.filePath);
+      window.open(url, '_blank');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not open document.');
+    } finally {
+      setOpening(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-slate-800/60 bg-slate-950/70 p-4">
@@ -60,9 +76,11 @@ export default function DocumentCard({ document: doc }: Props) {
         </div>
         <button
           type="button"
-          className="rounded-lg border border-slate-700/40 bg-slate-800/40 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 transition hover:border-sky-500/30 hover:text-sky-400"
+          onClick={() => void handleView()}
+          disabled={opening}
+          className="rounded-lg border border-slate-700/40 bg-slate-800/40 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 transition hover:border-sky-500/30 hover:text-sky-400 disabled:opacity-50"
         >
-          View
+          {opening ? '…' : 'View'}
         </button>
       </div>
     </div>

@@ -16,6 +16,7 @@ export type AuditAction =
   | 'inspection.rejected'
   | 'report.created'
   | 'report.submitted'
+  | 'report.rejected'
   | 'report.approved'
   | 'report.modified'
   | 'hazard.created'

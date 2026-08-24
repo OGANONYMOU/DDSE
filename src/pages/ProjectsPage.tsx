@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FolderKanban, Plus, Search } from 'lucide-react';
 import PageHeader from '../components/ui/PageHeader';
@@ -7,6 +7,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { usePagination } from '../hooks/usePagination';
 import PaginationBar from '../components/ui/PaginationBar';
 import { listProjects } from '../services/projects';
+import NewProjectModal from '../components/projects/NewProjectModal';
 import type { Project, ProjectStatus } from '../types/projects';
 
 const RISK_COLOR: Record<Project['riskLevel'], string> = {
@@ -43,9 +44,10 @@ export default function ProjectsPage() {
   const [allProjects, setAllProjects]   = useState<Project[]>([]);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
+  const [showNewProject, setShowNewProject] = useState(false);
   const debouncedSearch                 = useDebounce(search, 250);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     setLoading(true);
     setError(null);
     listProjects({
@@ -56,6 +58,10 @@ export default function ProjectsPage() {
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, [debouncedSearch, statusFilter]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const filtered = useMemo(() => allProjects, [allProjects]);
 
@@ -84,6 +90,7 @@ export default function ProjectsPage() {
         action={
           <button
             type="button"
+            onClick={() => setShowNewProject(true)}
             className="flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -242,6 +249,17 @@ export default function ProjectsPage() {
           onPrev={prev} onNext={next} onGoTo={goTo}
         />
       </div>
+
+      {showNewProject && (
+        <NewProjectModal
+          onClose={() => setShowNewProject(false)}
+          onCreated={(project) => {
+            setShowNewProject(false);
+            refresh();
+            navigate(`/projects/${project.id}`);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'inspection.rejected':      'Inspection Rejected',
   'report.created':           'Report Created',
   'report.submitted':         'Report Submitted',
+  'report.rejected':          'Report Rejected',
   'report.approved':          'Report Approved',
   'report.modified':          'Report Modified',
   'hazard.created':                    'Hazard Created',

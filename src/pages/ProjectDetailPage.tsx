@@ -93,6 +93,25 @@ export default function ProjectDetailPage() {
         </div>
       </DashboardSection>
 
+      {(project.reason || project.summary) && (
+        <DashboardSection title="Reason & Summary" subtitle="Why this project was opened, and what it covers">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {project.reason && (
+              <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Reason</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-300">{project.reason}</p>
+              </div>
+            )}
+            {project.summary && (
+              <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Summary</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-300">{project.summary}</p>
+              </div>
+            )}
+          </div>
+        </DashboardSection>
+      )}
+
       <DashboardSection
         title="Recent Inspections"
         subtitle={`${detail.milestones.length} milestone${detail.milestones.length !== 1 ? 's' : ''} on record`}

@@ -6,6 +6,8 @@ import type {
   DashboardSummary,
   InspectionDetail,
   InspectionSummary,
+  InspectionTemplate,
+  ModuleTemplateDefinition,
   ModuleDefinition,
   RegistrationFormOptions,
   SessionPayload,
@@ -16,12 +18,18 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 // Dev-mode module list mirrors the real, live module set (same 9 departments
 // and question templates seeded in supabase/migrations/20260810120000_module_templates.sql)
 // so the "Dev Access Panel" demo path shows the real DDSE evaluation content.
-const DEV_MODULES: ModuleDefinition[] = EVALUATION_TEMPLATES.map((m) => ({
+const DEV_MODULES: ModuleTemplateDefinition[] = EVALUATION_TEMPLATES.map((m) => ({
   id: m.code,
   moduleCode: m.code,
   title: m.title,
   classification: m.classification,
   description: m.description,
+  version: 1,
+  updatedAt: Date.now() - 1000 * 60 * 60 * 24,
+  template: { sections: m.sections.map((section) => ({
+    title: section.title,
+    items: section.items.map((item) => ({ ...item })),
+  })) },
 }));
 
 const RISK_BAND_FOR_SCORE = (score: number): { band: string; risk: string } => {
@@ -42,8 +50,9 @@ function buildDevInspectionFromTemplate(
   moduleCode: string,
   status: string,
   answeredFraction: number,
+  templateOverride?: InspectionTemplate,
 ): InspectionDetail {
-  const template = EVALUATION_TEMPLATES.find((m) => m.code === moduleCode);
+  const template = templateOverride ?? DEV_MODULES.find((m) => m.moduleCode === moduleCode)?.template;
   const templateSections = template?.sections ?? [];
 
   let seen = 0;
@@ -275,7 +284,8 @@ function buildDevAnalytics() {
 function createDevInspectionDetail(id: string, title: string, moduleCode: string): InspectionDetail {
   // 0% answered — a freshly-started evaluation, pre-populated with the module's
   // real question set (mirrors what create-inspection does against the live backend).
-  return buildDevInspectionFromTemplate(id, title, moduleCode, 'in_progress', 0);
+  const moduleTemplate = DEV_STATE.modules.find((m) => m.moduleCode === moduleCode)?.template;
+  return buildDevInspectionFromTemplate(id, title, moduleCode, 'in_progress', 0, moduleTemplate);
 }
 
 const DEV_STATE = {
@@ -285,6 +295,15 @@ const DEV_STATE = {
   approvals: [...DEV_PENDING_APPROVALS],
 };
 
+function cloneTemplate(template: InspectionTemplate): InspectionTemplate {
+  return {
+    sections: template.sections.map((section) => ({
+      title: section.title,
+      items: section.items.map((item) => ({ ...item })),
+    })),
+  };
+}
+
 function devEdgeFunction<T>(functionName: string, options: EdgeFunctionOptions = {}): Promise<T> {
   switch (functionName) {
     case 'get-command-center':
@@ -293,6 +312,30 @@ function devEdgeFunction<T>(functionName: string, options: EdgeFunctionOptions =
       return Promise.resolve(buildDevAnalytics() as unknown as T);
     case 'list-modules':
       return Promise.resolve(DEV_STATE.modules as unknown as T);
+    case 'get-module-template': {
+      const moduleCode = options.params?.moduleCode ?? '';
+      const moduleDef = DEV_STATE.modules.find((module) => module.moduleCode === moduleCode || module.id === moduleCode);
+      if (!moduleDef) throw new Error('Module not found.');
+      return Promise.resolve({
+        ...moduleDef,
+        template: cloneTemplate(moduleDef.template),
+      } as unknown as T);
+    }
+    case 'update-module-template': {
+      const body = options.body as { moduleCode: string; template: InspectionTemplate };
+      const moduleDef = DEV_STATE.modules.find((module) => module.moduleCode === body.moduleCode || module.id === body.moduleCode);
+      if (!moduleDef) throw new Error('Module not found.');
+      moduleDef.template = cloneTemplate(body.template);
+      moduleDef.version += 1;
+      moduleDef.updatedAt = Date.now();
+      return Promise.resolve({
+        success: true,
+        module: {
+          ...moduleDef,
+          template: cloneTemplate(moduleDef.template),
+        },
+      } as unknown as T);
+    }
     case 'list-inspections': {
       const moduleCode = options.params?.moduleCode;
       const filtered = moduleCode
@@ -363,9 +406,20 @@ function devEdgeFunction<T>(functionName: string, options: EdgeFunctionOptions =
       const body = options.body as { inspectionId: string; toStatus: string; comments?: string };
       const detail = DEV_STATE.details[body.inspectionId];
       if (!detail) throw new Error('Inspection detail not found.');
+      if ((body.toStatus === 'rejected' || body.toStatus === 'correction_required') && !body.comments?.trim()) {
+        throw new Error('A review note is required for declined or correction-required evaluations.');
+      }
       detail.inspection.status = body.toStatus;
       const inspection = DEV_STATE.inspections.find((item) => item._id === body.inspectionId);
       if (inspection) inspection.status = body.toStatus;
+      if (body.comments?.trim()) {
+        detail.reviewComments.unshift({
+          _id: createDevId('comment'),
+          actorRoleCode: 'super_admin',
+          body: body.comments.trim(),
+          createdAt: Date.now(),
+        });
+      }
       detail.auditLogs.unshift({
         _id: createDevId('audit'),
         action: `Inspection transitioned to ${body.toStatus}`,
@@ -620,6 +674,11 @@ export async function registerPersonnel(payload: {
   return { nextStep: 'sign_in' };
 }
 
+// Create a developer super-admin via server-side function (requires service key or dev secret)
+export async function createDeveloperSuperAdmin(payload: { email: string; password: string; fullName: string }) {
+  return callEdgeFunction<{ success: boolean; userId?: string }>('create-developer-admin', { method: 'POST', body: payload });
+}
+
 export async function signIn(payload: { serviceNumber: string; password: string }) {
   const signInLimit = checkSignInLimit(payload.serviceNumber);
   if (!signInLimit.allowed) {
@@ -715,6 +774,29 @@ export async function requestPasswordResetOTP(payload: {
   }
 }
 
+// Personnel admin helpers
+export async function listPersonnel(): Promise<Record<string, any>[]> {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, full_name, email, service_number, rank_code, directorate_code, role_code, status, created_at, updated_at')
+    .order('full_name', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function updatePersonnelStatus(id: string, status: string) {
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ status })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function softDeletePersonnel(id: string) {
+  // Soft-delete by marking status as 'deleted'
+  return updatePersonnelStatus(id, 'deleted');
+}
+
 // ─── OTP-based password reset (Step 2 — verify OTP + update password) ────────
 // Sends the OTP and new password to the edge function `verify-password-reset`,
 // which checks the stored hash, updates the auth user's password via the
@@ -786,6 +868,33 @@ export async function getAnalyticsSummary() {
 
 export async function getModules() {
   return callEdgeFunction<Record<string, unknown>[]>('list-modules');
+}
+
+export async function getModuleTemplate(moduleCode: string): Promise<ModuleTemplateDefinition> {
+  return callEdgeFunction<ModuleTemplateDefinition>('get-module-template', {
+    params: { moduleCode },
+  });
+}
+
+export async function updateModuleTemplate(
+  moduleCode: string,
+  template: InspectionTemplate
+): Promise<ModuleTemplateDefinition> {
+  const result = await callEdgeFunction<{ success: boolean; module: ModuleTemplateDefinition }>('update-module-template', {
+    method: 'POST',
+    body: { moduleCode, template },
+  });
+  return result.module;
+}
+
+export async function grantModuleEdit(
+  moduleCode: string,
+  grant: boolean
+) {
+  return callEdgeFunction<{ success: boolean; module: Record<string, unknown> }>('grant-module-edit', {
+    method: 'POST',
+    body: { moduleCode, grant },
+  });
 }
 
 export async function listInspections(moduleCode?: string) {

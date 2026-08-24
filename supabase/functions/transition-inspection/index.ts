@@ -1,6 +1,17 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
 import { withCors } from '../_helpers/cors.ts'
 
+const ALLOWED_STATUSES = new Set([
+  'draft',
+  'in_progress',
+  'submitted',
+  'under_review',
+  'approved',
+  'completed',
+  'rejected',
+  'correction_required',
+])
+
 Deno.serve(withCors(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 })
@@ -38,6 +49,21 @@ Deno.serve(withCors(async (req) => {
       )
     }
 
+    if (!ALLOWED_STATUSES.has(toStatus)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid inspection status' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const reviewNote = typeof comments === 'string' ? comments.trim() : ''
+    if ((toStatus === 'rejected' || toStatus === 'correction_required') && !reviewNote) {
+      return new Response(
+        JSON.stringify({ error: 'A review note is required for declined or correction-required evaluations.' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
     const { data: inspection, error: fetchError } = await supabase
       .from('inspections')
       .select('status, created_by')
@@ -53,16 +79,26 @@ Deno.serve(withCors(async (req) => {
 
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('is_platform_owner')
+      .select('is_platform_owner, role_code')
       .eq('id', user.id)
       .single()
 
     const isOwner = inspection.created_by === user.id
-    const isAdmin = profile?.is_platform_owner === true
+    const isAdmin = profile?.is_platform_owner === true ||
+      profile?.role_code === 'platform_owner' ||
+      profile?.role_code === 'super_admin'
 
     if (!isOwner && !isAdmin) {
       return new Response(
         JSON.stringify({ error: 'Forbidden' }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const reviewStatuses = new Set(['under_review', 'approved', 'rejected', 'correction_required', 'completed'])
+    if (reviewStatuses.has(toStatus) && !isAdmin) {
+      return new Response(
+        JSON.stringify({ error: 'Only super admins can review submitted inspections.' }),
         { status: 403, headers: { 'Content-Type': 'application/json' } }
       )
     }
@@ -79,11 +115,11 @@ Deno.serve(withCors(async (req) => {
       )
     }
 
-    if (comments) {
+    if (reviewNote) {
       await supabase.from('review_comments').insert({
         inspection_id: inspectionId,
         user_id: user.id,
-        body: comments,
+        body: reviewNote,
       })
     }
 

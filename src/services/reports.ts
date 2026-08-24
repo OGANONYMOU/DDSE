@@ -142,3 +142,24 @@ export async function approveReport(
 
   await logAuditEvent('report.approved', { entityType: 'report', entityId: id, metadata: { approvedBy: approverId } });
 }
+
+export async function declineReport(
+  id: string,
+  reviewerName: string,
+  reviewerId: string,
+  note?: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('reports')
+    .update({
+      status:        'rejected',
+      approved_by:   reviewerId,
+      approved_by_name: reviewerName,
+      approved_at:   new Date().toISOString(),
+      review_note:   note ?? null,
+    })
+    .eq('id', id);
+  if (error) throw error;
+
+  await logAuditEvent('report.rejected', { entityType: 'report', entityId: id, metadata: { rejectedBy: reviewerId, note } });
+}

@@ -30,6 +30,8 @@ export interface Project {
   endDate:              string | null;
   classification:       string;
   finalScore:           number | null;
+  reason:               string | null;
+  summary:              string | null;
   notes:                string | null;
   createdBy:            string;
   updatedBy:            string | null;

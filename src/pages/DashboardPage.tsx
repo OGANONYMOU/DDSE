@@ -22,6 +22,12 @@ import StatsCard from '../components/dashboard/StatsCard';
 import RecentActivity from '../components/dashboard/RecentActivity';
 import QuickActions from '../components/dashboard/QuickActions';
 import ChartsSection from '../components/dashboard/ChartsSection';
+import CommandSummary from '../components/analytics/CommandSummary';
+import MetricGrid from '../components/analytics/MetricGrid';
+import ComplianceChart from '../components/analytics/ComplianceChart';
+import RiskDistributionChart from '../components/analytics/RiskDistributionChart';
+import ActivityTimeline from '../components/analytics/ActivityTimeline';
+import { getAnalyticsSummary } from '../lib/api';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -39,6 +45,19 @@ export default function DashboardPage() {
     setSummary(dashSummary);
     setPendingApprovals(approvals as Record<string, unknown>[]);
   }, [canApprove]);
+
+  const [analytics, setAnalytics] = useState<any | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAnalyticsLoading(true);
+    getAnalyticsSummary()
+      .then((data) => { if (!cancelled) setAnalytics(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setAnalyticsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -157,10 +176,50 @@ export default function DashboardPage() {
 
       {/* ── Section C: Analytics ── */}
       <DashboardSection title="Analytics" subtitle="Compliance trends and finding distribution">
-        <ChartsSection
-          severityDistribution={summary?.severityDistribution}
-          moduleSummaries={summary?.moduleSummaries}
-        />
+        {/* Command-level KPI strip */}
+        <div className="mb-4">
+          <CommandSummary
+            activeProjects={analytics?.recurringHazards?.length ?? 0}
+            onHoldProjects={analytics?.contractorScores?.length ?? 0}
+            criticalHazards={analytics?.recurringHazards?.filter((r: any) => r.riskLevel === 'HIGH' || r.riskLevel === 'CRITICAL').length ?? 0}
+            pendingReviews={summary?.metrics?.find((m) => m.key === 'pending_reviews')?.value ?? 0}
+            overdueActions={summary?.metrics?.find((m) => m.key === 'open_corrective_actions')?.value ?? 0}
+          />
+        </div>
+
+        {/* Metric grid */}
+        <div className="mb-4">
+          <MetricGrid
+            cols={4}
+            metrics={analytics ? [
+              { label: 'Active Projects', value: analytics.modulePerformance.reduce((s: number, m: any) => s + m.inspections, 0), color: 'text-sky-400', unit: '' },
+              { label: 'Avg. Compliance', value: Math.round((analytics.modulePerformance.reduce((s: number, m: any) => s + m.avgScore, 0) / Math.max(1, analytics.modulePerformance.length)) || 0), color: 'text-white', unit: '%' },
+              { label: 'Critical Hazards', value: analytics.recurringHazards.filter((r: any) => r.riskLevel === 'HIGH' || r.riskLevel === 'CRITICAL').length, color: 'text-rose-400' },
+              { label: 'Pending Reviews', value: summary?.metrics?.find((m) => m.key === 'pending_reviews')?.value ?? 0, color: 'text-amber-400' },
+            ] : []}
+          />
+        </div>
+
+        {/* Charts row */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
+              {/* map compliance trend to expected shape */}
+              <ComplianceChart data={(analytics?.complianceTrend ?? []).map((p: any) => ({ period: p.period, compliance: p.value ?? null }))} />
+          </div>
+          <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
+            <RiskDistributionChart
+              riskDistribution={[]}
+              modulePerformance={(analytics?.modulePerformance ?? []).map((m: any) => ({ module: m.module, avgScore: m.avgScore, inspections: m.inspections, openActions: (m.openActions ?? 0) }))}
+            />
+          </div>
+        </div>
+
+        {/* Activity timeline */}
+        <div className="mt-4">
+          <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
+            <ActivityTimeline activities={summary?.recentActivity ?? []} limit={6} />
+          </div>
+        </div>
       </DashboardSection>
 
       {/* ── Approval Queue Modal ── */}

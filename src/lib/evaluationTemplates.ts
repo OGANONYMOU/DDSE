@@ -11,6 +11,7 @@ export interface EvaluationTemplateItem {
   weight: number;
 }
 
+
 export interface EvaluationTemplateSection {
   title: string;
   items: EvaluationTemplateItem[];

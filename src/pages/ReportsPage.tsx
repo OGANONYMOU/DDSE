@@ -5,9 +5,11 @@ import { FileBarChart2, Search, Plus, Download, Archive } from 'lucide-react';
 import { toast } from 'sonner';
 import PageHeader from '../components/ui/PageHeader';
 import { listReports } from '../services/reports';
+import { approveReport, declineReport } from '../services/reports';
 import { supabase } from '../lib/supabase';
 import type { Report, ReportStatus, ReportType } from '../types/reports';
 import { CLASSIFICATION_COLORS } from '../constants/app';
+import { useAuth } from '../context/AuthContext';
 
 type StatusFilter = ReportStatus | 'all';
 type TypeFilter   = ReportType   | 'all';
@@ -44,6 +46,8 @@ export default function ReportsPage() {
   const [selected,    setSelected]    = useState<Set<string>>(new Set());
   const [bulkBusy,    setBulkBusy]    = useState(false);
   const debouncedSearch               = useDebounce(search, 250);
+  const { user } = useAuth();
+  const isApprover = user.isPlatformOwner || user.roleCode === 'platform_owner' || user.roleCode === 'super_admin' || user.roleCode === 'admin';
 
   useEffect(() => {
     setLoading(true);
@@ -114,10 +118,13 @@ export default function ReportsPage() {
         title="Reports"
         subtitle="Inspection, compliance & operational report registry"
         action={
-          <button type="button" className="flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15">
-            <Plus className="h-3.5 w-3.5" /> Generate Report
-          </button>
-        }
+            <button
+              type="button"
+              onClick={() => { if (isApprover) navigate('/reports/export'); else navigate('/reports/create'); }}
+              className="flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15">
+              {isApprover ? <Download className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {isApprover ? 'Export Report' : 'Generate Report'}
+            </button>
+          }
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -202,14 +209,14 @@ export default function ReportsPage() {
       )}
 
       <div className="overflow-hidden rounded-xl border border-slate-800/60 bg-slate-950/70">
-        <div className="hidden lg:grid grid-cols-[32px_minmax(0,3fr)_minmax(0,1.5fr)_100px_100px_110px_80px] gap-4 border-b border-slate-800/60 px-5 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-600">
+        <div className="hidden lg:grid grid-cols-[32px_minmax(0,3fr)_200px_minmax(0,1.5fr)_100px_100px_110px_80px] gap-4 border-b border-slate-800/60 px-5 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-slate-600">
           {/* I-8: Select all checkbox */}
           <input type="checkbox"
             checked={selected.size === allReports.length && allReports.length > 0}
             onChange={toggleSelectAll}
             className="mt-0.5 rounded border-slate-700 bg-slate-900 accent-sky-500"
           />
-          <span>Report</span><span>Type</span><span>Directorate</span>
+          <span>Report</span><span>Submitted By</span><span>Type</span><span>Directorate</span>
           <span>Classification</span><span>Status</span><span className="text-right">Export</span>
         </div>
 
@@ -242,6 +249,7 @@ export default function ReportsPage() {
                     {r.projectName ?? r.directorateCode} · {r.createdAt.split('T')[0]}
                   </p>
                 </div>
+                <p className="text-[10px] font-mono text-slate-400 leading-snug">{r.generatedByName ?? r.generatedBy}</p>
                 <p className="text-[10px] font-mono text-slate-400 leading-snug">{r.type}</p>
                 <p className="text-[10px] font-mono text-slate-400 uppercase">{r.directorateCode}</p>
                 <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider w-fit ${CLASSIFICATION_COLORS[r.classification]}`}>
@@ -251,9 +259,36 @@ export default function ReportsPage() {
                   {r.status.replace('_', ' ')}
                 </span>
                 <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
-                  <button type="button" className="rounded-lg border border-slate-800/60 p-1.5 text-slate-500 transition hover:border-sky-500/30 hover:text-sky-400" title="Export">
-                    <Download className="h-3.5 w-3.5" />
-                  </button>
+                  {isApprover && r.status === 'pending_review' ? (
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={async () => {
+                        try {
+                          await approveReport(r.id, user.fullName || user.email || 'Approver', user.id);
+                          toast.success('Report approved');
+                          const fresh = await listReports({ search: debouncedSearch || undefined, type: typeF === 'all' ? undefined : typeF, status: statusF === 'all' ? undefined : statusF });
+                          setAllReports(fresh);
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : 'Approve failed');
+                        }
+                      }} className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-black uppercase text-emerald-300">Approve</button>
+                      <button type="button" onClick={async () => {
+                        const note = window.prompt('Enter a note explaining the rejection:');
+                        if (note === null) return;
+                        try {
+                          await declineReport(r.id, user.fullName || user.email || 'Reviewer', user.id, note || undefined);
+                          toast.success('Report rejected');
+                          const fresh = await listReports({ search: debouncedSearch || undefined, type: typeF === 'all' ? undefined : typeF, status: statusF === 'all' ? undefined : statusF });
+                          setAllReports(fresh);
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : 'Reject failed');
+                        }
+                      }} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[10px] font-black uppercase text-rose-300">Decline</button>
+                    </div>
+                  ) : (
+                    <button type="button" className="rounded-lg border border-slate-800/60 p-1.5 text-slate-500 transition hover:border-sky-500/30 hover:text-sky-400" title="Export">
+                      <Download className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))

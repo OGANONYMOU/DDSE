@@ -2,6 +2,7 @@
 // 11 roles · 6 clearance levels · per-deck module gating
 
 export type RoleCode =
+  | 'platform_owner'
   | 'super_admin'
   | 'director'
   | 'commander'
@@ -133,13 +134,27 @@ const ALL_DECKS: DeckId[] = ['hq', 'checklists', 'armoury', 'engineering', 'haza
 
 export const ROLE_CONFIGS: Record<RoleCode, RoleConfig> = {
 
+  // ── 0. PLATFORM OWNER (legacy/bootstrap super-admin alias) ────────────────
+  platform_owner: {
+    code: 'platform_owner',
+    label: 'Platform Owner',
+    fullTitle: 'Defense Headquarters Platform Authority',
+    clearanceLevel: 6,
+    permissions: ALL_PERMISSIONS,
+    accessibleDecks: ALL_DECKS,
+    uiTheme: { badgeColor: 'bg-yellow-500/20', badgeText: 'text-yellow-300', themeLabel: 'SUPREME COMMAND' },
+    privileged: true,
+  },
+
   // ── 1. SUPER ADMIN ─────────────────────────────────────────────────────────
   super_admin: {
     code: 'super_admin',
     label: 'Super Admin',
     fullTitle: 'Defense Headquarters System Authority',
     clearanceLevel: 6,
-    permissions: ALL_PERMISSIONS,
+    // Super admins are highly privileged but should not manage low-level system health
+    // (reserved for platform_owner). Exclude system config/audit permissions here.
+    permissions: ALL_PERMISSIONS.filter((p) => p !== 'system.config' && p !== 'system.audit_logs'),
     accessibleDecks: ALL_DECKS,
     uiTheme: { badgeColor: 'bg-yellow-500/20', badgeText: 'text-yellow-300', themeLabel: 'SUPREME COMMAND' },
     privileged: true,
@@ -364,12 +379,13 @@ export const APPROVAL_FLOW: Partial<Record<RoleCode, RoleCode>> = {
 
 // ─── Registration helpers ─────────────────────────────────────────────────────
 
-export const REGISTRATION_APPROVERS: RoleCode[] = ['super_admin', 'director', 'commander', 'admin'];
+export const REGISTRATION_APPROVERS: RoleCode[] = ['platform_owner', 'super_admin', 'director', 'commander', 'admin'];
 
 export const SELF_ASSIGNABLE_ROLES = Object.values(ROLE_CONFIGS).filter((r) => !r.privileged);
 
 // ─── Role hierarchy numeric weight (higher = more authority) ──────────────────
 const ROLE_WEIGHT: Record<RoleCode, number> = {
+  platform_owner:      120,
   super_admin:         110,
   director:            100,
   commander:            80,

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ClipboardCheck, Plus, Fingerprint, Layers3 } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { ClipboardCheck, Plus, Fingerprint, Layers3, FileQuestion, ShieldCheck, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -91,6 +92,7 @@ export default function InspectionsPage() {
 
   const effectiveCreateModule = createModule || (activeModule || modules[0]?.moduleCode || '');
   const createModuleDef = modules.find((m) => m.moduleCode === effectiveCreateModule) ?? null;
+  const isSuperAdmin = user.isPlatformOwner || user.roleCode === 'platform_owner' || user.roleCode === 'super_admin';
 
   async function handleCreate() {
     if (!newTitle.trim())        { toast.error('Enter a title for the evaluation.'); return; }
@@ -108,6 +110,60 @@ export default function InspectionsPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not start evaluation.');
     }
+  }
+
+  if (isSuperAdmin) {
+    const submittedCount = inspections.filter((inspection) =>
+      ['submitted', 'under_review', 'approved', 'rejected', 'correction_required', 'completed'].includes(inspection.status)
+    ).length;
+    const pendingCount = inspections.filter((inspection) =>
+      ['submitted', 'under_review'].includes(inspection.status)
+    ).length;
+    const totalQuestions = modules.length;
+
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Inspections" subtitle="Question setup and submitted evaluation review" />
+
+        {loading ? (
+          <div className="flex h-64 items-center justify-center rounded-xl border border-slate-800/60 bg-slate-950/40">
+            <ClipboardCheck className="h-8 w-8 animate-pulse text-sky-400/40" />
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-1">
+            <NavLink
+              to="/inspections/reviews"
+              className="group rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 transition hover:border-emerald-500/35 hover:bg-slate-950"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-500/25 bg-emerald-500/10">
+                    <ShieldCheck className="h-5 w-5 text-emerald-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white">Reviewing</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Review submitted evaluations, approve clean work, decline invalid submissions, or request guided corrections.
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-slate-600 transition group-hover:text-emerald-300" />
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-800/50 pt-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">Submitted</p>
+                  <p className="mt-1 text-2xl font-black tabular-nums text-white">{submittedCount}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">Pending</p>
+                  <p className="mt-1 text-2xl font-black tabular-nums text-amber-300">{pendingCount}</p>
+                </div>
+              </div>
+            </NavLink>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (

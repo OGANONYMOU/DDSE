@@ -16,6 +16,7 @@ export const STATUS_FLOW: Record<string, StatusInfo> = {
   approved:     { label: 'Approved',     next: 'completed',    nextLabel: 'Mark Completed' },
   completed:    { label: 'Completed' },
   rejected:     { label: 'Rejected',     next: 'draft',        nextLabel: 'Reopen as Draft' },
+  correction_required: { label: 'Correction Required', next: 'in_progress', nextLabel: 'Resume Correction' },
 };
 
 export const STATUS_COLOR: Record<string, string> = {
@@ -26,6 +27,7 @@ export const STATUS_COLOR: Record<string, string> = {
   approved:     'text-emerald-300 border-emerald-500/30 bg-emerald-500/10',
   completed:    'text-emerald-300 border-emerald-500/40 bg-emerald-500/15',
   rejected:     'text-rose-300 border-rose-500/30 bg-rose-500/10',
+  correction_required: 'text-amber-300 border-amber-500/30 bg-amber-500/10',
 };
 
 export function statusLabel(status: string): string {

@@ -11,6 +11,8 @@ const STATUS_CONFIG: Record<string, { label: string; classes: string }> = {
   pending:     { label: 'Pending',        classes: 'border-slate-600/40 bg-slate-700/20 text-slate-400' },
   in_review:   { label: 'In Review',      classes: 'border-violet-500/30 bg-violet-500/10 text-violet-400' },
   rejected:    { label: 'Rejected',       classes: 'border-rose-500/30 bg-rose-500/10 text-rose-400' },
+  under_review: { label: 'Under Review',  classes: 'border-violet-500/30 bg-violet-500/10 text-violet-400' },
+  correction_required: { label: 'Correction Required', classes: 'border-amber-500/30 bg-amber-500/10 text-amber-400' },
   // Safety
   open:        { label: 'Open',           classes: 'border-rose-500/30 bg-rose-500/10 text-rose-400' },
   resolved:    { label: 'Resolved',       classes: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' },

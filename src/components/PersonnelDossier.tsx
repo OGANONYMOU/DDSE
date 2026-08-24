@@ -1,15 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   UserCheck, Shield, Award, Terminal, Eye, BookOpen, MapPin, 
   ChevronRight, Star, RefreshCw, FileText, CheckCircle, Info, Activity
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '../context/AuthContext';
+import { usePermission } from '../hooks/usePermission';
 
 export default function PersonnelDossier() {
-  const [selectedOfficer, setSelectedOfficer] = useState<string>('OF-01');
+  const [selectedOfficer, setSelectedOfficer] = useState<string | null>('OF-01');
+  const [officers, setOfficers] = useState<Array<any>>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const officers = [
+  const { user } = useAuth();
+  const permission = usePermission();
+  const canViewAll = permission.can('personnel.view_all');
+  const canManage = permission.can('personnel.manage');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!canViewAll) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const { listPersonnel } = await import('../lib/api');
+        const data = await listPersonnel();
+        if (!cancelled) {
+          setOfficers(data);
+          setSelectedOfficer(data[0]?.id ?? null);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Fallback mock officers when not admin
+  const mockOfficers = [
     {
       id: 'OF-01',
       fullName: 'Brigadier General Musa Danjuma',
@@ -61,7 +95,7 @@ export default function PersonnelDossier() {
     },
   ];
 
-  const currentOfficer = officers.find((o) => o.id === selectedOfficer) ?? officers[0];
+  const currentOfficer = (officers.length > 0 ? officers : mockOfficers).find((o) => o.id === selectedOfficer) ?? (officers[0] ?? mockOfficers[0]);
 
   return (
     <div className="grid gap-6 xl:grid-cols-12 font-sans text-white">
@@ -75,7 +109,7 @@ export default function PersonnelDossier() {
           </h3>
 
           <div className="space-y-3">
-            {officers.map((off) => {
+            {(loading ? mockOfficers : (officers.length > 0 ? officers : mockOfficers)).map((off: any) => {
               const active = off.id === selectedOfficer;
               return (
                 <button
@@ -99,6 +133,23 @@ export default function PersonnelDossier() {
             })}
           </div>
         </div>
+              {canManage && (
+          <div className="mt-4 flex gap-2">
+            <button type="button" onClick={async () => {
+              const name = window.prompt('Full name for new personnel:');
+              if (!name) return;
+              const serviceNumber = window.prompt('Service number:');
+              if (!serviceNumber) return;
+              try {
+                const api = await import('../lib/api');
+                await api.registerPersonnel({ fullName: name, email: '', serviceNumber, phoneNumber: '', rankCode: 'pte', directorateCode: 'hq', password: 'ChangeMe123!', confirmPassword: 'ChangeMe123!' });
+                toast.success('Personnel registration created (pending approval).');
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : 'Create failed');
+              }
+            }} className="rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300">Add Personnel</button>
+          </div>
+        )}
       </div>
 
       {/* ── RIGHT COLUMN: OFFICER CLASSIFIED ID CARD DOSSIER (XL: 8 COLS) ── */}
@@ -148,7 +199,7 @@ export default function PersonnelDossier() {
           <div className="mt-6 border-t border-slate-900 pt-6">
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">DECORATIONS & SERVICE RIBBONS</h3>
             <div className="flex flex-wrap gap-3">
-              {currentOfficer.ribbons.map((ribbon) => (
+              {currentOfficer.ribbons.map((ribbon: string) => (
                 <div 
                   key={ribbon} 
                   className="rounded-xl border border-sky-500/20 bg-sky-500/5 px-4 py-3 text-center min-w-[120px] relative overflow-hidden group hover:border-sky-400/40 transition-all duration-300"
@@ -169,7 +220,7 @@ export default function PersonnelDossier() {
           <div className="mt-6 border-t border-slate-900 pt-6">
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">RECENT DEPLOYMENT ACTIVITY LOGS</h3>
             <div className="space-y-3">
-              {currentOfficer.history.map((log) => (
+              {currentOfficer.history.map((log: { date: string; detail: string }) => (
                 <div key={log.date} className="rounded-2xl border border-slate-900 bg-slate-950/60 p-4 text-xs font-mono">
                   <div className="flex justify-between text-[10px] text-slate-500 pb-2 border-b border-slate-900 mb-2">
                     <span>ACTION DISPATCH</span>
