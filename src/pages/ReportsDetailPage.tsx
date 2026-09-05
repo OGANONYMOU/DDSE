@@ -1,13 +1,15 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { ArrowLeft, FileBarChart2, Download, Printer, FileSpreadsheet } from 'lucide-react';
-import { getReport } from '../services/reports';
+import { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft, FileBarChart2, Download, Printer, FileSpreadsheet, CheckCircle2, XCircle } from 'lucide-react';
+import { toast } from 'sonner';
+import { getReport, approveReport, declineReport } from '../services/reports';
 import type { Report } from '../types/reports';
 import PageHeader from '../components/ui/PageHeader';
 import DashboardSection from '../components/dashboard/DashboardSection';
 import { CLASSIFICATION_COLORS } from '../constants/app';
 import { quickPrint, type ClassificationLevel } from '../lib/pdfExport';
 import { useAuth } from '../context/AuthContext';
+import { isAdminOrAbove } from '../lib/rbac';
 
 const STATUS_STYLE: Record<string, string> = {
   draft:          'border-slate-700/60 bg-slate-800/30 text-slate-400',
@@ -31,16 +33,55 @@ export default function ReportsDetailPage() {
   const [report,  setReport]  = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
+  const [acting, setActing] = useState<'approve' | 'decline' | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!id) return;
     setLoading(true);
     setError(null);
     getReport(id)
-      .then(setReport)
+      .then((r) => { setReport(r); setReviewNote(''); })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(load, [load]);
+
+  // Mirrors the `reports_update` RLS policy — anyone the DB actually lets approve/decline.
+  const isApprover = isAdminOrAbove(user.roleCode, user.isPlatformOwner);
+
+  async function handleApprove() {
+    if (!report) return;
+    setActing('approve');
+    try {
+      await approveReport(report.id, user.fullName || user.email || 'Approver', user.id);
+      toast.success('Report approved.');
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not approve report.');
+    } finally {
+      setActing(null);
+    }
+  }
+
+  async function handleDecline() {
+    if (!report) return;
+    if (!reviewNote.trim()) {
+      toast.error('Add a note explaining the decline — this guides the submitting department.');
+      return;
+    }
+    setActing('decline');
+    try {
+      await declineReport(report.id, user.fullName || user.email || 'Reviewer', user.id, reviewNote.trim());
+      toast.success('Report declined.');
+      load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not decline report.');
+    } finally {
+      setActing(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -157,6 +198,48 @@ export default function ReportsDetailPage() {
           </div>
         </div>
       </DashboardSection>
+
+      {report.status === 'rejected' && report.reviewNote && (
+        <DashboardSection title="Review Note" subtitle="Why this report was declined — use this to guide the resubmission">
+          <div className="rounded-xl border border-rose-500/20 bg-rose-950/10 p-5">
+            <p className="text-[12px] leading-relaxed text-rose-200">{report.reviewNote}</p>
+          </div>
+        </DashboardSection>
+      )}
+
+      {isApprover && report.status === 'pending_review' && (
+        <DashboardSection title="Reviewer Decision" subtitle="Approve this report or decline it with a note for the submitting department">
+          <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
+            <textarea
+              value={reviewNote}
+              onChange={(e) => setReviewNote(e.target.value)}
+              rows={3}
+              placeholder="Required for decline. Keep it specific so the submitting department knows what to fix."
+              className="w-full resize-none rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2.5 text-sm leading-6 text-white placeholder:text-slate-600 outline-none focus:border-sky-500/40"
+            />
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={acting !== null}
+                onClick={() => void handleApprove()}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-bold uppercase text-emerald-300 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Approve
+              </button>
+              <button
+                type="button"
+                disabled={acting !== null}
+                onClick={() => void handleDecline()}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs font-bold uppercase text-rose-300 transition hover:bg-rose-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <XCircle className="h-4 w-4" />
+                Decline
+              </button>
+            </div>
+          </div>
+        </DashboardSection>
+      )}
 
       {report.executiveSummary && (
         <DashboardSection title="Executive Summary" subtitle="High-level assessment and context">

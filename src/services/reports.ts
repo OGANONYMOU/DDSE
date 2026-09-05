@@ -25,6 +25,7 @@ function dbToReport(row: Record<string, unknown>, findings?: ReportFinding[]): R
     approvedBy:       row.approved_by ? String(row.approved_by) : null,
     approvedByName:   row.approved_by_name ? String(row.approved_by_name) : null,
     approvedAt:       row.approved_at ? String(row.approved_at) : null,
+    reviewNote:       row.review_note ? String(row.review_note) : null,
     createdAt:        String(row.created_at ?? ''),
     updatedAt:        String(row.updated_at ?? ''),
     findings,
@@ -136,6 +137,7 @@ export async function approveReport(
       approved_by:      approverId,
       approved_by_name: approverName,
       approved_at:      new Date().toISOString(),
+      review_note:      null,
     })
     .eq('id', id);
   if (error) throw error;

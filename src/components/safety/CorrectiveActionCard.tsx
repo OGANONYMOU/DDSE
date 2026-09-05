@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { PlayCircle, ShieldCheck } from 'lucide-react';
 import type { HazardCorrectiveAction } from '../../types/safety';
 
 const URGENCY_COLOR: Record<HazardCorrectiveAction['urgency'], string> = {
@@ -14,10 +16,68 @@ const STATUS_COLOR: Record<HazardCorrectiveAction['status'], string> = {
 };
 
 interface Props {
-  actions: HazardCorrectiveAction[];
+  actions:    HazardCorrectiveAction[];
+  canManage?: boolean;
+  onStart?:   (id: string) => void;
+  onResolve?: (id: string, notes: string, evidence: string) => void;
 }
 
-export default function CorrectiveActionCard({ actions }: Props) {
+function ResolveForm({ actionId, onResolve }: { actionId: string; onResolve: NonNullable<Props['onResolve']> }) {
+  const [open, setOpen] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [evidence, setEvidence] = useState('');
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500/15"
+      >
+        <ShieldCheck className="h-3 w-3" />
+        Resolve &amp; Verify
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+      <textarea
+        value={evidence}
+        onChange={(e) => setEvidence(e.target.value)}
+        rows={2}
+        placeholder="Verification evidence / reference…"
+        className="w-full resize-none rounded-lg border border-slate-800/80 bg-slate-900/60 px-2.5 py-2 text-[11px] text-white placeholder:text-slate-600 outline-none focus:border-emerald-500/40"
+      />
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        rows={2}
+        placeholder="Verification notes…"
+        className="w-full resize-none rounded-lg border border-slate-800/80 bg-slate-900/60 px-2.5 py-2 text-[11px] text-white placeholder:text-slate-600 outline-none focus:border-emerald-500/40"
+      />
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-lg border border-slate-800/60 bg-slate-900/40 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={!evidence.trim() || !notes.trim()}
+          onClick={() => onResolve(actionId, notes.trim(), evidence.trim())}
+          className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Confirm Resolution
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function CorrectiveActionCard({ actions, canManage = false, onStart, onResolve }: Props) {
   if (actions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-800/60 bg-slate-950/40 py-10 text-center">
@@ -55,6 +115,24 @@ export default function CorrectiveActionCard({ actions }: Props) {
               {action.verifiedAt && (
                 <span className="text-[9px] font-mono text-slate-600">{action.verifiedAt.split('T')[0]}</span>
               )}
+            </div>
+          )}
+
+          {canManage && action.status !== 'resolved' && (
+            <div className="mt-3 border-t border-slate-800/40 pt-3">
+              <div className="flex flex-wrap gap-2">
+                {action.status === 'pending' && onStart && (
+                  <button
+                    type="button"
+                    onClick={() => onStart(action.id)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/25 bg-sky-500/10 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15"
+                  >
+                    <PlayCircle className="h-3 w-3" />
+                    Start
+                  </button>
+                )}
+                {onResolve && <ResolveForm actionId={action.id} onResolve={onResolve} />}
+              </div>
             </div>
           )}
         </div>

@@ -12,9 +12,9 @@ import {
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { getCommandCenterSummary, getPendingApprovals, approveRegistration } from '../lib/api';
-import { hasPermission } from '../lib/rbac';
-import type { DashboardSummary } from '../types/platform';
+import { getCommandCenterSummary, getPendingApprovals, approveRegistration, getAnalyticsSummary } from '../lib/api';
+import { hasPermission, canAccessDeck } from '../lib/rbac';
+import type { DashboardSummary, AnalyticsSummary } from '../types/platform';
 
 import PageHeader from '../components/ui/PageHeader';
 import DashboardSection from '../components/dashboard/DashboardSection';
@@ -26,8 +26,6 @@ import CommandSummary from '../components/analytics/CommandSummary';
 import MetricGrid from '../components/analytics/MetricGrid';
 import ComplianceChart from '../components/analytics/ComplianceChart';
 import RiskDistributionChart from '../components/analytics/RiskDistributionChart';
-import ActivityTimeline from '../components/analytics/ActivityTimeline';
-import { getAnalyticsSummary } from '../lib/api';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -36,6 +34,7 @@ export default function DashboardPage() {
   const [pendingApprovals, setPendingApprovals] = useState<Record<string, unknown>[]>([]);
   const [authQueueOpen, setAuthQueueOpen] = useState(false);
   const canApprove = hasPermission(user.roleCode, 'approval.register');
+  const canViewAnalytics = canAccessDeck(user.roleCode, 'analytics');
 
   const load = useCallback(async () => {
     const [dashSummary, approvals] = await Promise.all([
@@ -46,10 +45,11 @@ export default function DashboardPage() {
     setPendingApprovals(approvals as Record<string, unknown>[]);
   }, [canApprove]);
 
-  const [analytics, setAnalytics] = useState<any | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
   useEffect(() => {
+    if (!canViewAnalytics) { setAnalyticsLoading(false); return; }
     let cancelled = false;
     setAnalyticsLoading(true);
     getAnalyticsSummary()
@@ -57,7 +57,7 @@ export default function DashboardPage() {
       .catch(() => {})
       .finally(() => { if (!cancelled) setAnalyticsLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [canViewAnalytics]);
 
   useEffect(() => {
     setLoading(true);
@@ -175,52 +175,50 @@ export default function DashboardPage() {
       </DashboardSection>
 
       {/* ── Section C: Analytics ── */}
-      <DashboardSection title="Analytics" subtitle="Compliance trends and finding distribution">
-        {/* Command-level KPI strip */}
-        <div className="mb-4">
-          <CommandSummary
-            activeProjects={analytics?.recurringHazards?.length ?? 0}
-            onHoldProjects={analytics?.contractorScores?.length ?? 0}
-            criticalHazards={analytics?.recurringHazards?.filter((r: any) => r.riskLevel === 'HIGH' || r.riskLevel === 'CRITICAL').length ?? 0}
-            pendingReviews={summary?.metrics?.find((m) => m.key === 'pending_reviews')?.value ?? 0}
-            overdueActions={summary?.metrics?.find((m) => m.key === 'open_corrective_actions')?.value ?? 0}
-          />
-        </div>
+      {canViewAnalytics && (
+        <>
+          <DashboardSection title="Command Summary" subtitle="Live operational indicators derived from all active modules">
+            {analyticsLoading || !analytics ? (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-[104px] animate-pulse rounded-xl border border-slate-800/60 bg-slate-900/40" />
+                ))}
+              </div>
+            ) : (
+              <CommandSummary
+                activeProjects={analytics.activeProjects}
+                onHoldProjects={analytics.onHoldProjects}
+                criticalHazards={analytics.criticalHazards}
+                pendingReviews={analytics.pendingReviews}
+                overdueActions={analytics.overdueActions}
+              />
+            )}
+          </DashboardSection>
 
-        {/* Metric grid */}
-        <div className="mb-4">
-          <MetricGrid
-            cols={4}
-            metrics={analytics ? [
-              { label: 'Active Projects', value: analytics.modulePerformance.reduce((s: number, m: any) => s + m.inspections, 0), color: 'text-sky-400', unit: '' },
-              { label: 'Avg. Compliance', value: Math.round((analytics.modulePerformance.reduce((s: number, m: any) => s + m.avgScore, 0) / Math.max(1, analytics.modulePerformance.length)) || 0), color: 'text-white', unit: '%' },
-              { label: 'Critical Hazards', value: analytics.recurringHazards.filter((r: any) => r.riskLevel === 'HIGH' || r.riskLevel === 'CRITICAL').length, color: 'text-rose-400' },
-              { label: 'Pending Reviews', value: summary?.metrics?.find((m) => m.key === 'pending_reviews')?.value ?? 0, color: 'text-amber-400' },
-            ] : []}
-          />
-        </div>
-
-        {/* Charts row */}
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
-              {/* map compliance trend to expected shape */}
-              <ComplianceChart data={(analytics?.complianceTrend ?? []).map((p: any) => ({ period: p.period, compliance: p.value ?? null }))} />
-          </div>
-          <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
-            <RiskDistributionChart
-              riskDistribution={[]}
-              modulePerformance={(analytics?.modulePerformance ?? []).map((m: any) => ({ module: m.module, avgScore: m.avgScore, inspections: m.inspections, openActions: (m.openActions ?? 0) }))}
+          <DashboardSection title="Platform Metrics" subtitle="Aggregate performance across projects, inspections and safety">
+            <MetricGrid
+              cols={4}
+              metrics={analytics ? [
+                { label: 'Active Projects',       value: analytics.activeProjects,     color: 'text-sky-400',     trend: 'UP',     note: 'In-progress' },
+                { label: 'Avg. Compliance Score', value: analytics.complianceAvg,      color: 'text-white',       trend: 'UP',     unit: '%' },
+                { label: 'Critical Hazards',      value: analytics.criticalHazards,    color: 'text-rose-400',    trend: 'STABLE', note: 'Require escalation' },
+                { label: 'Pending Reviews',       value: analytics.pendingReviews,     color: 'text-amber-400',   trend: 'DOWN',   note: 'Awaiting sign-off' },
+                { label: 'Open Reports',          value: analytics.openReports,        color: 'text-slate-300',   trend: 'STABLE', note: 'Draft / in review' },
+                { label: 'Total Assessments',     value: analytics.totalAssessments,   color: 'text-slate-300',   note: 'All evaluations' },
+                { label: 'Inspection Modules',    value: analytics.inspectionModules,  color: 'text-slate-300',   note: 'Active templates' },
+                { label: 'Registered Projects',   value: analytics.registeredProjects, color: 'text-slate-300',   note: 'All directorates' },
+              ] : []}
             />
-          </div>
-        </div>
+          </DashboardSection>
 
-        {/* Activity timeline */}
-        <div className="mt-4">
-          <div className="rounded-xl border border-slate-800/60 bg-slate-950/70 p-5">
-            <ActivityTimeline activities={summary?.recentActivity ?? []} limit={6} />
-          </div>
-        </div>
-      </DashboardSection>
+          <DashboardSection title="Compliance Intelligence" subtitle="Score trends and risk distribution across the platform">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ComplianceChart data={analytics?.complianceTrend ?? []} />
+              <RiskDistributionChart riskDistribution={analytics?.riskDistribution ?? []} modulePerformance={analytics?.modulePerformance ?? []} />
+            </div>
+          </DashboardSection>
+        </>
+      )}
 
       {/* ── Approval Queue Modal ── */}
       <AnimatePresence>

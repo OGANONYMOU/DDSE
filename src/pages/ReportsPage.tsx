@@ -10,6 +10,27 @@ import { supabase } from '../lib/supabase';
 import type { Report, ReportStatus, ReportType } from '../types/reports';
 import { CLASSIFICATION_COLORS } from '../constants/app';
 import { useAuth } from '../context/AuthContext';
+import { isAdminOrAbove } from '../lib/rbac';
+
+function exportReportsToCsv(reports: Report[]) {
+  const headers = ['Title', 'Type', 'Directorate', 'Submitted By', 'Status', 'Classification', 'Created', 'Approved By', 'Approved At'];
+  const rows = reports.map((r) => [
+    r.title, r.type, r.directorateCode, r.generatedByName ?? r.generatedBy,
+    r.status, r.classification, r.createdAt.split('T')[0],
+    r.approvedByName ?? '', r.approvedAt ? r.approvedAt.split('T')[0] : '',
+  ]);
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const csv = [headers, ...rows].map((row) => row.map((cell) => escape(String(cell))).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `reports-export-${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 type StatusFilter = ReportStatus | 'all';
 type TypeFilter   = ReportType   | 'all';
@@ -47,7 +68,8 @@ export default function ReportsPage() {
   const [bulkBusy,    setBulkBusy]    = useState(false);
   const debouncedSearch               = useDebounce(search, 250);
   const { user } = useAuth();
-  const isApprover = user.isPlatformOwner || user.roleCode === 'platform_owner' || user.roleCode === 'super_admin' || user.roleCode === 'admin';
+  // Mirrors the `reports_update` RLS policy — anyone the DB actually lets approve/decline.
+  const isApprover = isAdminOrAbove(user.roleCode, user.isPlatformOwner);
 
   useEffect(() => {
     setLoading(true);
@@ -120,7 +142,10 @@ export default function ReportsPage() {
         action={
             <button
               type="button"
-              onClick={() => { if (isApprover) navigate('/reports/export'); else navigate('/reports/create'); }}
+              onClick={() => {
+                if (isApprover) exportReportsToCsv(selected.size > 0 ? allReports.filter((r) => selected.has(r.id)) : allReports);
+                else navigate('/reports/create');
+              }}
               className="flex items-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15">
               {isApprover ? <Download className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />} {isApprover ? 'Export Report' : 'Generate Report'}
             </button>
@@ -189,6 +214,16 @@ export default function ReportsPage() {
           <span className="text-[11px] font-black uppercase text-sky-300">
             {selected.size} selected
           </span>
+          {isApprover && (
+            <button
+              type="button"
+              onClick={() => exportReportsToCsv(allReports.filter((r) => selected.has(r.id)))}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-700/60 bg-slate-800/40 px-3 py-1.5 text-[10px] font-black uppercase text-slate-400 transition hover:border-sky-500/30 hover:text-sky-400"
+            >
+              <Download className="h-3 w-3" />
+              Export Selected
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleBulkArchive()}
@@ -285,7 +320,12 @@ export default function ReportsPage() {
                       }} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[10px] font-black uppercase text-rose-300">Decline</button>
                     </div>
                   ) : (
-                    <button type="button" className="rounded-lg border border-slate-800/60 p-1.5 text-slate-500 transition hover:border-sky-500/30 hover:text-sky-400" title="Export">
+                    <button
+                      type="button"
+                      onClick={() => exportReportsToCsv([r])}
+                      className="rounded-lg border border-slate-800/60 p-1.5 text-slate-500 transition hover:border-sky-500/30 hover:text-sky-400"
+                      title="Export"
+                    >
                       <Download className="h-3.5 w-3.5" />
                     </button>
                   )}

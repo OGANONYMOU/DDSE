@@ -60,7 +60,9 @@ export default function InspectionQuestionsPage() {
   const isSuperAdmin = user.isPlatformOwner || user.roleCode === 'platform_owner' || user.roleCode === 'super_admin';
   const canView = hasPermission(user.roleCode, 'inspections.create') || isSuperAdmin;
   const [editingEnabled, setEditingEnabled] = useState(false);
-  const canEdit = (hasPermission(user.roleCode, 'inspections.create') && !isSuperAdmin) || (isSuperAdmin && editingEnabled);
+  // Only super admins/platform owners can ever save template changes (enforced server-side too).
+  // Super admins must explicitly grant themselves editing per department first.
+  const canEdit = isSuperAdmin && editingEnabled;
 
   const [modules, setModules] = useState<ModuleDefinition[]>([]);
   const [selectedCode, setSelectedCode] = useState('');
@@ -104,6 +106,7 @@ export default function InspectionQuestionsPage() {
       setTemplate(cloned);
       setSavedSnapshot(JSON.stringify(cloned));
       setActiveSectionIndex(0);
+      setEditingEnabled(next.templateEditGranted === true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not load questions.');
     } finally {

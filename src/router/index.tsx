@@ -11,9 +11,10 @@ const ProjectsPage         = lazy(() => import('../pages/ProjectsPage'));
 const ProjectDetailPage    = lazy(() => import('../pages/ProjectDetailPage'));
 const InspectionsPage      = lazy(() => import('../pages/InspectionsPage'));
 const InspectionDetailPage = lazy(() => import('../pages/InspectionDetailPage'));
+const InspectionQuestionsPage = lazy(() => import('../pages/InspectionQuestionsPage'));
+const InspectionReviewsPage   = lazy(() => import('../pages/InspectionReviewsPage'));
 const SafetyPage           = lazy(() => import('../pages/SafetyPage'));
 const SafetyDetailPage     = lazy(() => import('../pages/SafetyDetailPage'));
-const AnalyticsPage        = lazy(() => import('../pages/AnalyticsPage'));
 const ReportsPage          = lazy(() => import('../pages/ReportsPage'));
 const ReportsDetailPage    = lazy(() => import('../pages/ReportsDetailPage'));
 const PersonnelPage        = lazy(() => import('../pages/PersonnelPage'));
@@ -47,27 +48,19 @@ export function createAppRouter({ user, onLogout }: RouterOptions) {
         { index: true,              element: <Lazy><DashboardPage /></Lazy> },
         { path: 'projects',         element: <Lazy><ProjectsPage /></Lazy> },
         { path: 'projects/:id',     element: <Lazy><ProjectDetailPage /></Lazy> },
-        { path: 'inspections',      element: <Lazy><InspectionsPage /></Lazy> },
-        { path: 'inspections/:id',  element: <Lazy><InspectionDetailPage /></Lazy> },
+        { path: 'inspections',           element: <Lazy><InspectionsPage /></Lazy> },
+        { path: 'inspections/questions', element: <Lazy><InspectionQuestionsPage /></Lazy> },
+        { path: 'inspections/reviews',   element: <Lazy><InspectionReviewsPage /></Lazy> },
+        { path: 'inspections/:id',       element: <Lazy><InspectionDetailPage /></Lazy> },
         { path: 'safety',           element: <Lazy><SafetyPage /></Lazy> },
         { path: 'safety/:id',       element: <Lazy><SafetyDetailPage /></Lazy> },
-        {
-          path: 'analytics',
-          element: (
-            <Lazy>
-              <RouteGuard deck="analytics">
-                <AnalyticsPage />
-              </RouteGuard>
-            </Lazy>
-          ),
-        },
         { path: 'reports',          element: <Lazy><ReportsPage /></Lazy> },
         { path: 'reports/:id',      element: <Lazy><ReportsDetailPage /></Lazy> },
         {
           path: 'personnel',
           element: (
             <Lazy>
-              <RouteGuard permission="personnel.view_own">
+              <RouteGuard permission="personnel.view_all">
                 <PersonnelPage />
               </RouteGuard>
             </Lazy>

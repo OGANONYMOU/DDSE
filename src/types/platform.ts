@@ -107,6 +107,27 @@ export interface ModuleDefinition {
   description: string;
 }
 
+export interface PersonnelRecord {
+  id:                  string;
+  fullName:            string;
+  serviceNumber:       string;
+  email:               string | null;
+  phoneNumber:         string | null;
+  rankCode:            string | null;
+  directorateCode:     string;
+  roleCode:            string;
+  status:              string; // 'active' | 'inactive' | 'pending' | 'suspended' | 'deleted'
+  clearanceLevel:      number | null;
+  commandJurisdiction: string | null;
+  mfaEnrolled:         boolean;
+  isPlatformOwner:     boolean;
+  flagged:             boolean;
+  flaggedReason:       string | null;
+  flaggedAt:           string | null;
+  createdAt:           string;
+  updatedAt:           string;
+}
+
 export type InspectionQuestionResponseType = 'yes_no' | 'score_5' | 'narrative' | 'checklist';
 
 export interface InspectionTemplateItem {
@@ -129,6 +150,7 @@ export interface ModuleTemplateDefinition extends ModuleDefinition {
   version: number;
   updatedAt?: number;
   template: InspectionTemplate;
+  templateEditGranted?: boolean;
 }
 
 export interface InspectionSummary {

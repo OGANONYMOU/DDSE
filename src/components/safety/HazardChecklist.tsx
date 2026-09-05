@@ -1,10 +1,12 @@
-import { CheckCircle2, XCircle, MinusCircle } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, XCircle, MinusCircle, Plus } from 'lucide-react';
 import type { HazardCheckItem } from '../../types/safety';
 
 interface Props {
   items:     HazardCheckItem[];
   editable?: boolean;
   onChange?: (id: string, value: boolean | null) => void;
+  onAdd?:    (prompt: string) => void;
 }
 
 function StatusIcon({ v }: { v: boolean | null }) {
@@ -13,10 +15,18 @@ function StatusIcon({ v }: { v: boolean | null }) {
   return                 <MinusCircle  className="h-4 w-4 text-slate-500 shrink-0" />;
 }
 
-export default function HazardChecklist({ items, editable = false, onChange }: Props) {
+export default function HazardChecklist({ items, editable = false, onChange, onAdd }: Props) {
+  const [newPrompt, setNewPrompt] = useState('');
   const pass   = items.filter((i) => i.compliant === true).length;
   const fail   = items.filter((i) => i.compliant === false).length;
   const unsure = items.filter((i) => i.compliant === null).length;
+
+  function submitAdd() {
+    const trimmed = newPrompt.trim();
+    if (!trimmed) return;
+    onAdd?.(trimmed);
+    setNewPrompt('');
+  }
 
   return (
     <div className="space-y-3">
@@ -25,6 +35,12 @@ export default function HazardChecklist({ items, editable = false, onChange }: P
         <span className="text-rose-400">{fail} Fail</span>
         {unsure > 0 && <span className="text-slate-500">{unsure} N/A</span>}
       </div>
+
+      {items.length === 0 && (
+        <div className="rounded-lg border border-dashed border-slate-800/70 py-6 text-center">
+          <p className="text-[11px] font-mono uppercase text-slate-600">No checklist items yet</p>
+        </div>
+      )}
 
       {items.map((item) => (
         <div
@@ -63,6 +79,26 @@ export default function HazardChecklist({ items, editable = false, onChange }: P
           </div>
         </div>
       ))}
+
+      {editable && onAdd && (
+        <div className="flex gap-2 rounded-xl border border-dashed border-slate-800/70 p-3">
+          <input
+            value={newPrompt}
+            onChange={(e) => setNewPrompt(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submitAdd(); }}
+            placeholder="Add a checklist item to evaluate…"
+            className="flex-1 min-w-0 rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-[11px] text-white placeholder:text-slate-600 outline-none focus:border-sky-500/40"
+          />
+          <button
+            type="button"
+            onClick={submitAdd}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 text-[10px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add
+          </button>
+        </div>
+      )}
     </div>
   );
 }

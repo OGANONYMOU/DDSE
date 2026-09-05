@@ -170,7 +170,7 @@ export const ROLE_CONFIGS: Record<RoleCode, RoleConfig> = {
       'data.view_nationwide', 'data.export_all', 'data.classified', 'data.top_secret',
       'inspections.approve_major', 'inspections.view_all', 'inspections.create',
       'reports.strategic', 'reports.departmental', 'reports.view_finalized',
-      'commanders.manage', 'personnel.view_all',
+      'commanders.manage',
       'audit.view', 'audit.verify',
       'approval.register',
       'system.audit_logs',
@@ -192,7 +192,6 @@ export const ROLE_CONFIGS: Record<RoleCode, RoleConfig> = {
       'data.classified', 'data.view_nationwide',
       'inspections.approve_local', 'inspections.create', 'inspections.view_all',
       'reports.departmental', 'reports.submit',
-      'personnel.view_all',
       'armoury.monitor',
       'logistics.monitor', 'logistics.track',
       'safety.conduct',
@@ -212,7 +211,7 @@ export const ROLE_CONFIGS: Record<RoleCode, RoleConfig> = {
     fullTitle: 'Administrative Operations Officer',
     clearanceLevel: 4,
     permissions: [
-      'personnel.manage', 'personnel.view_all',
+      'personnel.view_all',
       'inspections.create', 'inspections.view_all',
       'reports.departmental', 'reports.submit',
       'approval.register', 'approval.submit',
@@ -405,4 +404,10 @@ export function roleWeight(roleCode: string): number {
 
 export function outranks(roleA: string, roleB: string): boolean {
   return roleWeight(roleA) > roleWeight(roleB);
+}
+
+// Mirrors the Postgres helper public.is_admin_or_above() used across RLS policies
+// (reports, hazards, projects, …) — keep in sync with that function.
+export function isAdminOrAbove(roleCode: string, isPlatformOwner?: boolean): boolean {
+  return isPlatformOwner === true || ['super_admin', 'director', 'commander', 'admin', 'auditor'].includes(roleCode);
 }

@@ -37,7 +37,7 @@ Deno.serve(withCors(async (req) => {
 
     const { data, error } = await supabase
       .from('modules')
-      .select('code, title, description, classification, version, updated_at, template')
+      .select('code, title, description, classification, version, updated_at, template, template_edit_granted')
       .eq('code', moduleCode)
       .maybeSingle()
 
@@ -64,6 +64,7 @@ Deno.serve(withCors(async (req) => {
       version: data.version ?? 1,
       updatedAt: data.updated_at ? new Date(data.updated_at).getTime() : undefined,
       template: data.template ?? { sections: [] },
+      templateEditGranted: data.template_edit_granted === true,
     }), {
       headers: { 'Content-Type': 'application/json' },
     })

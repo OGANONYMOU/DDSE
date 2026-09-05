@@ -7,7 +7,6 @@ import {
   ClipboardCheck,
   ShieldAlert,
   FileBarChart2,
-  BarChart3,
   Users,
   Bell,
   Settings,
@@ -36,8 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/inspections',   label: 'Inspections',        icon: ClipboardCheck },
   { to: '/safety',        label: 'Safety Assessments', icon: ShieldAlert },
   { to: '/reports',       label: 'Reports',            icon: FileBarChart2 },
-  { to: '/analytics',     label: 'Analytics',          icon: BarChart3 },
-  { to: '/personnel',     label: 'Personnel',          icon: Users },
+  { to: '/personnel',     label: 'Personnel',          icon: Users, permission: 'personnel.view_all' },
   // Phase 11 — Enterprise modules
   { to: '/broadcasts',    label: 'Broadcasts',         icon: Radio },
 ];

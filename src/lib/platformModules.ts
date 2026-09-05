@@ -177,7 +177,7 @@ export const PLATFORM_MODULES: PlatformModule[] = [
     id: 'analytics', name: 'Compliance Analytics', version: '2.5.0', status: 'active',
     owner: 'DDSE Core', dataOwner: 'supabase',
     description: 'Compliance trends, risk distribution, module performance, activity timeline',
-    routes: [{ path: '/analytics', label: 'Analytics', deck: 'analytics' }],
+    routes: [{ path: '/', label: 'Analytics', deck: 'analytics' }],
     permissions: ['data.view_nationwide', 'inspections.view_all'],
     events: {
       emits:   [],

@@ -2,19 +2,25 @@
 // I-5: Offline draft support. I-7: Score persisted server-side. I-15: Template version shown.
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ClipboardCheck, CheckCircle2, Tag } from 'lucide-react';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
+import { ArrowLeft, ClipboardCheck, CheckCircle2, Tag, MessageSquare, ArrowRight, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { getInspectionDetail, saveInspectionResponse } from '../lib/api';
+import { getInspectionDetail, saveInspectionResponse, transitionInspection } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
-import { saveDraft, syncDrafts } from '../lib/offlineSync';
-import type { InspectionDetail, InspectionSummary } from '../types/platform';
+import { saveDraft } from '../lib/offlineSync';
+import { STATUS_FLOW, statusLabel } from '../lib/inspectionStatus';
+import type { InspectionDetail } from '../types/platform';
 import PageHeader from '../components/ui/PageHeader';
 import StatusBadge from '../components/ui/StatusBadge';
 import OfflineDraftBanner from '../components/ui/OfflineDraftBanner';
 import QuestionRenderer, { type QuestionResponse, type QuestionType } from '../components/inspection/QuestionRenderer';
+
+// Statuses an officer (not a reviewer) is allowed to self-advance from —
+// review-stage transitions (submitted → under_review/approved/rejected/…)
+// are reviewer-only and enforced server-side in transition-inspection.
+const OFFICER_ADVANCEABLE_STATUSES = new Set(['draft', 'in_progress', 'correction_required', 'rejected']);
 
 function mapResponseType(raw: string): QuestionType {
   switch (raw) {
@@ -103,32 +109,51 @@ export default function InspectionDetailPage() {
   const [loading,         setLoading]         = useState(true);
   const [responses,       setResponses]       = useState<Responses>({});
   const [activeSectionId, setActiveSectionId] = useState<string>('');
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const loadDetail = useCallback(async (inspectionId: string, { showSpinner = false } = {}) => {
+    if (showSpinner) setLoading(true);
+    try {
+      const d = await getInspectionDetail(inspectionId);
+      const inspDetail = d as InspectionDetail;
+      setDetail(inspDetail);
+      setActiveSectionId((current) => current || inspDetail.sections[0]?._id || '');
+      // Seed responses from existing DB data with correct type mapping (C-8)
+      const existing: Responses = {};
+      for (const section of inspDetail.sections) {
+        for (const item of section.items) {
+          if (item.response?.responseValue != null) {
+            const seeded = seedResponse(item.responseType, item.response.responseValue);
+            if (seeded) existing[item._id] = seeded;
+          }
+        }
+      }
+      setResponses(existing);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not load inspection.');
+    } finally {
+      if (showSpinner) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!id) return;
-    setLoading(true);
-    getInspectionDetail(id)
-      .then((d) => {
-        const inspDetail = d as InspectionDetail;
-        setDetail(inspDetail);
-        if (inspDetail.sections.length > 0) {
-          setActiveSectionId(inspDetail.sections[0]._id);
-        }
-        // Seed responses from existing DB data with correct type mapping (C-8)
-        const existing: Responses = {};
-        for (const section of inspDetail.sections) {
-          for (const item of section.items) {
-            if (item.response?.responseValue != null) {
-              const seeded = seedResponse(item.responseType, item.response.responseValue);
-              if (seeded) existing[item._id] = seeded;
-            }
-          }
-        }
-        setResponses(existing);
-      })
-      .catch((err: Error) => toast.error(err.message))
-      .finally(() => setLoading(false));
-  }, [id]);
+    void loadDetail(id, { showSpinner: true });
+  }, [id, loadDetail]);
+
+  async function handleTransition(toStatus: string) {
+    if (!id) return;
+    setIsTransitioning(true);
+    try {
+      await transitionInspection(id, toStatus);
+      await loadDetail(id);
+      toast.success(`Moved to ${statusLabel(toStatus)}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not change status.');
+    } finally {
+      setIsTransitioning(false);
+    }
+  }
 
   const activeSection = useMemo(
     () => detail?.sections.find((s) => s._id === activeSectionId) ?? null,
@@ -187,6 +212,12 @@ export default function InspectionDetailPage() {
     return section.items.length === 0 ? 0 : Math.round((answered / section.items.length) * 100);
   }, [allSections, responses]);
 
+  // Super admins review submitted work on the Reviewing page — they never fill in evaluation questions.
+  const isSuperAdmin = user.isPlatformOwner || user.roleCode === 'platform_owner' || user.roleCode === 'super_admin';
+  if (isSuperAdmin) {
+    return <Navigate to={`/inspections/reviews?inspection=${id ?? ''}`} replace />;
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-32">
@@ -211,6 +242,8 @@ export default function InspectionDetailPage() {
   }
 
   const { inspection } = detail;
+  const flow = STATUS_FLOW[inspection.status];
+  const canAdvanceStatus = OFFICER_ADVANCEABLE_STATUSES.has(inspection.status);
 
   return (
     <div className="space-y-6">
@@ -252,10 +285,55 @@ export default function InspectionDetailPage() {
                 );
               })()}
               <StatusBadge status={inspection.status} size="md" />
+              {canAdvanceStatus && flow?.next && (
+                <button
+                  type="button"
+                  disabled={isTransitioning}
+                  onClick={() => void handleTransition(flow.next!)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-50"
+                >
+                  {flow.nextLabel}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              )}
             </div>
           }
         />
       </div>
+
+      {detail.reviewComments.length > 0 && (
+        <div className={`rounded-xl border p-5 ${
+          inspection.status === 'rejected' || inspection.status === 'correction_required'
+            ? 'border-amber-500/30 bg-amber-500/5'
+            : 'border-slate-800/60 bg-slate-950/70'
+        }`}>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+            {inspection.status === 'rejected' || inspection.status === 'correction_required' ? (
+              <TriangleAlert className="h-4 w-4 text-amber-400" />
+            ) : (
+              <MessageSquare className="h-4 w-4 text-slate-400" />
+            )}
+            Reviewer Feedback
+          </h3>
+          {(inspection.status === 'rejected' || inspection.status === 'correction_required') && (
+            <p className="mt-1 text-xs text-amber-300/80">
+              Address the notes below before resubmitting this evaluation.
+            </p>
+          )}
+          <div className="mt-3 space-y-2 max-h-[260px] overflow-y-auto pr-1">
+            {[...detail.reviewComments]
+              .sort((a, b) => b.createdAt - a.createdAt)
+              .map((comment) => (
+                <div key={comment._id} className="rounded-lg border border-slate-800/60 bg-slate-950/60 p-3">
+                  <p className="text-sm leading-6 text-slate-200">{comment.body}</p>
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    {comment.actorRoleCode.replace(/_/g, ' ')} · {new Date(comment.createdAt).toLocaleString()}
+                  </p>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[

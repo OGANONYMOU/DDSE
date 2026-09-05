@@ -9,6 +9,7 @@ import type {
   InspectionTemplate,
   ModuleTemplateDefinition,
   ModuleDefinition,
+  PersonnelRecord,
   RegistrationFormOptions,
   SessionPayload,
 } from '../types/platform';
@@ -775,13 +776,52 @@ export async function requestPasswordResetOTP(payload: {
 }
 
 // Personnel admin helpers
-export async function listPersonnel(): Promise<Record<string, any>[]> {
+function toPersonnelRecord(row: Record<string, any>): PersonnelRecord {
+  return {
+    id:                  row.id,
+    fullName:            row.full_name,
+    serviceNumber:       row.service_number,
+    email:               row.email ?? null,
+    phoneNumber:         row.phone_number ?? null,
+    rankCode:            row.rank_code ?? null,
+    directorateCode:     row.directorate_code,
+    roleCode:            row.role_code,
+    status:              row.status,
+    clearanceLevel:      row.clearance_level ?? null,
+    commandJurisdiction: row.command_jurisdiction ?? null,
+    mfaEnrolled:         Boolean(row.mfa_enrolled),
+    isPlatformOwner:     Boolean(row.is_platform_owner),
+    flagged:             Boolean(row.flagged),
+    flaggedReason:       row.flagged_reason ?? null,
+    flaggedAt:           row.flagged_at ?? null,
+    createdAt:           row.created_at,
+    updatedAt:           row.updated_at,
+  };
+}
+
+export async function listPersonnel(): Promise<PersonnelRecord[]> {
   const { data, error } = await supabase
     .from('user_profiles')
-    .select('id, full_name, email, service_number, rank_code, directorate_code, role_code, status, created_at, updated_at')
+    .select('id, full_name, email, phone_number, service_number, rank_code, directorate_code, role_code, status, clearance_level, command_jurisdiction, mfa_enrolled, is_platform_owner, flagged, flagged_reason, flagged_at, created_at, updated_at')
     .order('full_name', { ascending: true });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map(toPersonnelRecord);
+}
+
+// Admin-driven personnel creation. Goes through an edge function (Admin API,
+// service role) rather than the public signUp() flow — signUp() from an
+// already-authenticated browser session would replace the caller's own
+// session with the newly created account.
+export async function createPersonnel(payload: {
+  fullName:        string;
+  serviceNumber:   string;
+  rankCode:        string;
+  directorateCode: string;
+  roleCode:        string;
+  email?:          string;
+  phoneNumber?:    string;
+}): Promise<{ userId: string; serviceNumber: string; temporaryPassword: string }> {
+  return callEdgeFunction('create-personnel', { method: 'POST', body: payload });
 }
 
 export async function updatePersonnelStatus(id: string, status: string) {
@@ -795,6 +835,22 @@ export async function updatePersonnelStatus(id: string, status: string) {
 export async function softDeletePersonnel(id: string) {
   // Soft-delete by marking status as 'deleted'
   return updatePersonnelStatus(id, 'deleted');
+}
+
+export async function flagPersonnel(id: string, flaggedBy: string, reason: string) {
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ flagged: true, flagged_reason: reason, flagged_at: new Date().toISOString(), flagged_by: flaggedBy })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function unflagPersonnel(id: string) {
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ flagged: false, flagged_reason: null, flagged_at: null, flagged_by: null })
+    .eq('id', id);
+  if (error) throw error;
 }
 
 // ─── OTP-based password reset (Step 2 — verify OTP + update password) ────────

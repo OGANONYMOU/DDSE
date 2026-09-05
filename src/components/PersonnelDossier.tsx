@@ -1,238 +1,492 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  UserCheck, Shield, Award, Terminal, Eye, BookOpen, MapPin, 
-  ChevronRight, Star, RefreshCw, FileText, CheckCircle, Info, Activity
+import {
+  UserCheck, Shield, ShieldAlert, Snowflake, Flag, Trash2, UserPlus, Search,
+  Mail, Phone, Copy, X, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { usePermission } from '../hooks/usePermission';
+import { CLEARANCE_LABELS, ROLE_CONFIGS, type RoleCode, type ClearanceLevel } from '../lib/rbac';
+import {
+  listPersonnel, createPersonnel, updatePersonnelStatus, softDeletePersonnel,
+  flagPersonnel, unflagPersonnel, getRegistrationFormOptions,
+} from '../lib/api';
+import type { PersonnelRecord, RegistrationFormOptions } from '../types/platform';
+
+const STATUS_STYLES: Record<string, string> = {
+  active:    'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
+  pending:   'text-amber-400  border-amber-500/30  bg-amber-500/10',
+  suspended: 'text-orange-400 border-orange-500/30 bg-orange-500/10',
+  inactive:  'text-slate-400  border-slate-700/40  bg-slate-800/20',
+  deleted:   'text-rose-400   border-rose-500/30   bg-rose-500/10',
+};
+
+const ASSIGNABLE_ROLES = (Object.keys(ROLE_CONFIGS) as RoleCode[])
+  .filter((code) => code !== 'platform_owner')
+  .map((code) => ({ code, label: ROLE_CONFIGS[code].label }));
+
+const emptyNewPersonnel = {
+  fullName: '', serviceNumber: '', rankCode: '', directorateCode: '',
+  roleCode: 'staff', email: '', phoneNumber: '',
+};
 
 export default function PersonnelDossier() {
-  const [selectedOfficer, setSelectedOfficer] = useState<string | null>('OF-01');
-  const [officers, setOfficers] = useState<Array<any>>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const { user } = useAuth();
   const permission = usePermission();
   const canViewAll = permission.can('personnel.view_all');
-  const canManage = permission.can('personnel.manage');
+  const canManage  = permission.can('personnel.manage');
+
+  const [officers, setOfficers]   = useState<PersonnelRecord[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery]         = useState('');
+  const [busyId, setBusyId]       = useState<string | null>(null);
+
+  const [formOptions, setFormOptions] = useState<RegistrationFormOptions | null>(null);
+  const [addOpen, setAddOpen]         = useState(false);
+  const [addForm, setAddForm]         = useState(emptyNewPersonnel);
+  const [addSubmitting, setAddSubmitting] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState<{ serviceNumber: string; temporaryPassword: string } | null>(null);
+
+  async function load() {
+    if (!canViewAll) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listPersonnel();
+      setOfficers(data);
+      setSelectedId((current) => current ?? data[0]?.id ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!canViewAll) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const { listPersonnel } = await import('../lib/api');
-        const data = await listPersonnel();
-        if (!cancelled) {
-          setOfficers(data);
-          setSelectedOfficer(data[0]?.id ?? null);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
     void load();
-    return () => { cancelled = true; };
-  }, []);
+    if (canManage) {
+      getRegistrationFormOptions().then(setFormOptions).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canViewAll, canManage]);
 
-  // Fallback mock officers when not admin
-  const mockOfficers = [
-    {
-      id: 'OF-01',
-      fullName: 'Brigadier General Musa Danjuma',
-      rank: 'Brigadier General',
-      serviceNumber: 'N/10000001',
-      clearance: 'LEVEL_5_SECRET',
-      role: 'Base Commander',
-      status: 'ACTIVE_DUTY',
-      unit: 'HQ Defense Command Post 1',
-      joinedDate: '2020-04-12',
-      ribbons: ['Distinguished Service', 'Meritorious Operations', 'Defense Medal', 'Border Security Valor'],
-      history: [
-        { date: '2026-02-15', detail: 'Authorized central weapons deployment overhaul.' },
-        { date: '2025-11-04', detail: 'Led perimeter thermal camera arrays clearance sweep.' },
-        { date: '2025-08-30', detail: 'Transitioned Sector Bravo into full DEFCON 3 standby.' },
-      ],
-    },
-    {
-      id: 'OF-02',
-      fullName: 'Colonel Chidi Okafor',
-      rank: 'Colonel',
-      serviceNumber: 'N/10000002',
-      clearance: 'LEVEL_4_SECRET',
-      role: 'Director of Strategic Engineering',
-      status: 'ACTIVE_DUTY',
-      unit: 'Military Construction Unit 14',
-      joinedDate: '2021-08-20',
-      ribbons: ['Engineering Excellence', 'Distinguished Service', 'Meritorious Operations'],
-      history: [
-        { date: '2026-03-01', detail: 'Approved foundations pours for underground bunkers.' },
-        { date: '2025-12-10', detail: 'Commissioned drainage array designs for tactical airfield.' },
-      ],
-    },
-    {
-      id: 'OF-03',
-      fullName: 'Lieutenant Colonel Amina Hassan',
-      rank: 'Lieutenant Colonel',
-      serviceNumber: 'N/10000003',
-      clearance: 'LEVEL_4_SECRET',
-      role: 'Directorate Head of Evaluations',
-      status: 'ACTIVE_DUTY',
-      unit: 'Compliance & Audits Division',
-      joinedDate: '2022-01-15',
-      ribbons: ['Compliance Ribbon', 'Meritorious Operations', 'Defense Medal'],
-      history: [
-        { date: '2026-05-18', detail: 'Conducted comprehensive readiness sweep at headquarters.' },
-        { date: '2026-01-22', detail: 'Resolved corrective action pipeline in safety manual.' },
-      ],
-    },
-  ];
+  const rankLabel = (code: string | null) =>
+    formOptions?.ranks.find((r) => r.code === code)?.label ?? code ?? 'Not on file';
+  const directorateLabel = (code: string) =>
+    formOptions?.directorates.find((d) => d.code === code)?.name ?? code;
+  const roleLabel = (code: string) => ROLE_CONFIGS[code as RoleCode]?.label ?? code;
+  const clearanceLabel = (level: number | null) =>
+    level ? CLEARANCE_LABELS[level as ClearanceLevel] : '—';
 
-  const currentOfficer = (officers.length > 0 ? officers : mockOfficers).find((o) => o.id === selectedOfficer) ?? (officers[0] ?? mockOfficers[0]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return officers;
+    return officers.filter((o) =>
+      o.fullName.toLowerCase().includes(q) || o.serviceNumber.toLowerCase().includes(q)
+    );
+  }, [officers, query]);
+
+  const currentOfficer = filtered.find((o) => o.id === selectedId) ?? officers.find((o) => o.id === selectedId) ?? filtered[0] ?? null;
+
+  async function runAction(id: string, label: string, action: () => Promise<void>) {
+    setBusyId(id);
+    try {
+      await action();
+      await load();
+      toast.success(label);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Action failed.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function handleFreeze(o: PersonnelRecord) {
+    const freezing = o.status !== 'suspended';
+    const verb = freezing ? 'Freeze' : 'Unfreeze';
+    if (!window.confirm(`${verb} ${o.fullName}'s account?`)) return;
+    void runAction(o.id, `${o.fullName}'s account ${freezing ? 'frozen' : 'reactivated'}.`, () =>
+      updatePersonnelStatus(o.id, freezing ? 'suspended' : 'active')
+    );
+  }
+
+  function handleFlag(o: PersonnelRecord) {
+    if (o.flagged) {
+      if (!window.confirm(`Clear the flag on ${o.fullName}?`)) return;
+      void runAction(o.id, `Flag cleared for ${o.fullName}.`, () => unflagPersonnel(o.id));
+      return;
+    }
+    const reason = window.prompt(`Reason for flagging ${o.fullName}:`);
+    if (!reason) return;
+    void runAction(o.id, `${o.fullName} flagged for review.`, () => flagPersonnel(o.id, user.id, reason));
+  }
+
+  function handleDelete(o: PersonnelRecord) {
+    if (!window.confirm(`Delete ${o.fullName}'s profile? This deactivates their account (soft-delete) and can be reversed by reactivating status.`)) return;
+    void runAction(o.id, `${o.fullName}'s profile deleted.`, () => softDeletePersonnel(o.id));
+  }
+
+  async function handleCreate() {
+    if (!addForm.fullName || !addForm.serviceNumber || !addForm.rankCode || !addForm.directorateCode) {
+      toast.error('Full name, service number, rank and directorate are required.');
+      return;
+    }
+    setAddSubmitting(true);
+    try {
+      const result = await createPersonnel(addForm);
+      setCreatedCredentials({ serviceNumber: result.serviceNumber, temporaryPassword: result.temporaryPassword });
+      setAddForm(emptyNewPersonnel);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create personnel record.');
+    } finally {
+      setAddSubmitting(false);
+    }
+  }
+
+  function closeAddModal() {
+    setAddOpen(false);
+    setCreatedCredentials(null);
+    setAddForm(emptyNewPersonnel);
+  }
+
+  if (!canViewAll) {
+    return (
+      <div className="rounded-3xl border border-slate-800 bg-slate-950/80 p-10 text-center">
+        <ShieldAlert className="mx-auto h-8 w-8 text-rose-400/60" />
+        <p className="mt-3 text-xs font-black uppercase tracking-widest text-slate-400">Restricted</p>
+        <p className="mt-1 text-[11px] font-mono text-slate-600">Personnel records are visible to super admins and admins only.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-6 xl:grid-cols-12 font-sans text-white">
-      {/* ── LEFT SIDEBAR: OFFICER SELECTION LIST (XL: 4 COLS) ── */}
-      <div className="xl:col-span-4 space-y-6">
+      {/* ── LEFT: ROSTER LIST ── */}
+      <div className="xl:col-span-4 space-y-4">
         <div className="rounded-3xl border border-slate-800 bg-slate-950/80 p-6 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-[2px] bg-sky-500/20"></div>
-          <h3 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 flex items-center gap-2 mb-6">
-            <UserCheck className="h-5 w-5 text-sky-400" />
-            OFFICER COMMAND DIRECTORY
-          </h3>
+          <div className="absolute top-0 left-0 w-full h-[2px] bg-sky-500/20" />
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h3 className="text-xs font-black uppercase tracking-[0.25em] text-slate-400 flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-sky-400" />
+              PERSONNEL ROSTER
+            </h3>
+            <span className="text-[10px] font-mono text-slate-600">{officers.length}</span>
+          </div>
 
-          <div className="space-y-3">
-            {(loading ? mockOfficers : (officers.length > 0 ? officers : mockOfficers)).map((off: any) => {
-              const active = off.id === selectedOfficer;
-              return (
-                <button
-                  key={off.id}
-                  onClick={() => setSelectedOfficer(off.id)}
-                  className={`w-full text-left p-5 rounded-2xl border transition-all duration-300 relative ${
-                    active 
-                      ? 'border-sky-500/40 bg-sky-950/90 shadow-[0_0_15px_rgba(56,182,255,0.08)]' 
-                      : 'border-slate-900 bg-slate-950/40 hover:border-slate-800'
-                  }`}
-                  type="button"
-                >
-                  <div className="flex justify-between items-center text-[10px] font-mono text-slate-500">
-                    <span>{off.serviceNumber}</span>
-                    <span className="font-bold text-sky-400 uppercase">{off.status.replaceAll('_', ' ')}</span>
-                  </div>
-                  <h4 className="text-sm font-black uppercase text-white mt-1">{off.fullName}</h4>
-                  <p className="text-xs text-slate-400 mt-2 font-mono">{off.rank} · {off.role}</p>
-                </button>
-              );
-            })}
+          <div className="relative mb-4">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search name or service number…"
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 py-2 pl-9 pr-3 text-xs text-white placeholder:text-slate-600 focus:border-sky-500/40 focus:outline-none"
+            />
+          </div>
+
+          {error && (
+            <p className="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[10px] font-mono text-rose-300">{error}</p>
+          )}
+
+          <div className="space-y-3 max-h-[560px] overflow-y-auto pr-1">
+            {loading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-[84px] animate-pulse rounded-2xl border border-slate-900 bg-slate-900/40" />
+              ))
+            ) : filtered.length === 0 ? (
+              <p className="py-6 text-center text-[11px] font-mono text-slate-600">No personnel match.</p>
+            ) : (
+              filtered.map((off) => {
+                const active = off.id === currentOfficer?.id;
+                return (
+                  <button
+                    key={off.id}
+                    onClick={() => setSelectedId(off.id)}
+                    className={`w-full text-left p-5 rounded-2xl border transition-all duration-300 relative ${
+                      active
+                        ? 'border-sky-500/40 bg-sky-950/90 shadow-[0_0_15px_rgba(56,182,255,0.08)]'
+                        : 'border-slate-900 bg-slate-950/40 hover:border-slate-800'
+                    }`}
+                    type="button"
+                  >
+                    <div className="flex justify-between items-center gap-2 text-[10px] font-mono text-slate-500">
+                      <span>{off.serviceNumber}</span>
+                      <span className={`rounded border px-1.5 py-0.5 font-bold uppercase ${STATUS_STYLES[off.status] ?? STATUS_STYLES.inactive}`}>
+                        {off.status}
+                      </span>
+                    </div>
+                    <h4 className="mt-1 flex items-center gap-1.5 text-sm font-black uppercase text-white">
+                      {off.fullName}
+                      {off.flagged && <Flag className="h-3 w-3 shrink-0 text-rose-400" />}
+                    </h4>
+                    <p className="mt-2 text-xs text-slate-400 font-mono">{roleLabel(off.roleCode)} · {directorateLabel(off.directorateCode)}</p>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
-              {canManage && (
-          <div className="mt-4 flex gap-2">
-            <button type="button" onClick={async () => {
-              const name = window.prompt('Full name for new personnel:');
-              if (!name) return;
-              const serviceNumber = window.prompt('Service number:');
-              if (!serviceNumber) return;
-              try {
-                const api = await import('../lib/api');
-                await api.registerPersonnel({ fullName: name, email: '', serviceNumber, phoneNumber: '', rankCode: 'pte', directorateCode: 'hq', password: 'ChangeMe123!', confirmPassword: 'ChangeMe123!' });
-                toast.success('Personnel registration created (pending approval).');
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : 'Create failed');
-              }
-            }} className="rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-sky-300">Add Personnel</button>
+
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2.5 text-[11px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/20"
+          >
+            <UserPlus className="h-3.5 w-3.5" />
+            Add Personnel
+          </button>
+        )}
+      </div>
+
+      {/* ── RIGHT: DOSSIER ── */}
+      <div className="xl:col-span-8 space-y-6">
+        {!currentOfficer ? (
+          <div className="rounded-3xl border border-slate-800 bg-slate-950/80 p-10 text-center text-[11px] font-mono text-slate-600">
+            {loading ? 'Loading personnel records…' : 'Select a record from the roster.'}
+          </div>
+        ) : (
+          <div className="rounded-3xl border border-slate-800 bg-slate-950/80 p-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-sky-500/5 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="flex flex-wrap items-start justify-between gap-6 pb-6 border-b border-slate-900">
+              <div className="flex items-center gap-5">
+                <div className="relative h-20 w-20 rounded-2xl border border-sky-400/30 bg-sky-500/10 flex items-center justify-center text-sky-400">
+                  <Shield className="h-10 w-10" />
+                  <div className="absolute inset-1 rounded-xl border border-dashed border-sky-500/25" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-rose-500 border border-rose-500/20 px-2 py-0.5 bg-rose-500/5 rounded">
+                      {clearanceLabel(currentOfficer.clearanceLevel)}
+                    </span>
+                    {currentOfficer.flagged && (
+                      <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.2em] text-rose-400 border border-rose-500/30 px-2 py-0.5 bg-rose-500/10 rounded">
+                        <Flag className="h-2.5 w-2.5" /> Flagged
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-xl font-black text-white uppercase tracking-wider mt-1.5">{currentOfficer.fullName}</h2>
+                  <p className="text-xs text-slate-400 font-mono mt-1">
+                    SERVICE NO: {currentOfficer.serviceNumber} · RANK: {rankLabel(currentOfficer.rankCode)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-right font-mono text-xs text-slate-500">
+                <span>ACCOUNT STATUS</span>
+                <span className={`mt-1 block rounded border px-2 py-1 text-sm font-black uppercase ${STATUS_STYLES[currentOfficer.status] ?? STATUS_STYLES.inactive}`}>
+                  {currentOfficer.status}
+                </span>
+              </div>
+            </div>
+
+            {currentOfficer.flagged && currentOfficer.flaggedReason && (
+              <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4">
+                <p className="text-[9px] font-black uppercase tracking-wider text-rose-400">Flag Reason</p>
+                <p className="mt-1 text-xs text-rose-200">{currentOfficer.flaggedReason}</p>
+              </div>
+            )}
+
+            {/* Details grid */}
+            <div className="mt-6 grid gap-4 md:grid-cols-2 text-xs font-mono">
+              <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
+                <p className="text-slate-500 uppercase text-[9px] tracking-wider">Directorate</p>
+                <p className="text-sm font-bold text-white uppercase">{directorateLabel(currentOfficer.directorateCode)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
+                <p className="text-slate-500 uppercase text-[9px] tracking-wider">Assigned Role</p>
+                <p className="text-sm font-bold text-white uppercase">{roleLabel(currentOfficer.roleCode)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
+                <p className="text-slate-500 uppercase text-[9px] tracking-wider flex items-center gap-1"><Mail className="h-3 w-3" /> Email</p>
+                <p className="text-sm font-bold text-white">{currentOfficer.email ?? 'Not on file'}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
+                <p className="text-slate-500 uppercase text-[9px] tracking-wider flex items-center gap-1"><Phone className="h-3 w-3" /> Phone</p>
+                <p className="text-sm font-bold text-white">{currentOfficer.phoneNumber ?? 'Not on file'}</p>
+              </div>
+              {currentOfficer.commandJurisdiction && (
+                <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
+                  <p className="text-slate-500 uppercase text-[9px] tracking-wider">Command Jurisdiction</p>
+                  <p className="text-sm font-bold text-white uppercase">{currentOfficer.commandJurisdiction}</p>
+                </div>
+              )}
+              <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
+                <p className="text-slate-500 uppercase text-[9px] tracking-wider">MFA Enrolled</p>
+                <p className="text-sm font-bold text-white uppercase">{currentOfficer.mfaEnrolled ? 'Yes' : 'No'}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
+                <p className="text-slate-500 uppercase text-[9px] tracking-wider">Registered</p>
+                <p className="text-sm font-bold text-white uppercase">{new Date(currentOfficer.createdAt).toLocaleDateString()}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
+                <p className="text-slate-500 uppercase text-[9px] tracking-wider">Last Updated</p>
+                <p className="text-sm font-bold text-white uppercase">{new Date(currentOfficer.updatedAt).toLocaleDateString()}</p>
+              </div>
+            </div>
+
+            {/* Super-admin actions */}
+            {canManage && (
+              <div className="mt-6 border-t border-slate-900 pt-6">
+                <h3 className="mb-4 text-xs font-black uppercase tracking-widest text-slate-400">Administrative Actions</h3>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busyId === currentOfficer.id}
+                    onClick={() => handleFreeze(currentOfficer)}
+                    className="flex items-center gap-1.5 rounded-lg border border-orange-500/25 bg-orange-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-orange-300 transition hover:bg-orange-500/20 disabled:opacity-50"
+                  >
+                    <Snowflake className="h-3.5 w-3.5" />
+                    {currentOfficer.status === 'suspended' ? 'Unfreeze Account' : 'Freeze Account'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId === currentOfficer.id}
+                    onClick={() => handleFlag(currentOfficer)}
+                    className="flex items-center gap-1.5 rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-rose-300 transition hover:bg-rose-500/20 disabled:opacity-50"
+                  >
+                    <Flag className="h-3.5 w-3.5" />
+                    {currentOfficer.flagged ? 'Clear Flag' : 'Flag for Review'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId === currentOfficer.id || currentOfficer.status === 'deleted'}
+                    onClick={() => handleDelete(currentOfficer)}
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 transition hover:border-rose-500/40 hover:text-rose-300 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {currentOfficer.status === 'deleted' ? 'Deleted' : 'Delete Personnel'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* ── RIGHT COLUMN: OFFICER CLASSIFIED ID CARD DOSSIER (XL: 8 COLS) ── */}
-      <div className="xl:col-span-8 space-y-6">
-        <div className="rounded-3xl border border-slate-800 bg-slate-950/80 p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-sky-500/5 rounded-full blur-3xl pointer-events-none"></div>
-          
-          <div className="flex flex-wrap items-start justify-between gap-6 pb-6 border-b border-slate-900">
-            {/* Tactical Profile Photo Box representation */}
-            <div className="flex items-center gap-5">
-              <div className="relative h-20 w-20 rounded-2xl border border-sky-400/30 bg-sky-500/10 flex items-center justify-center text-sky-400">
-                <Shield className="h-10 w-10 animate-pulse" />
-                <div className="absolute inset-1 rounded-xl border border-dashed border-sky-500/25"></div>
-              </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-rose-500 border border-rose-500/20 px-2 py-0.5 bg-rose-500/5 rounded">
-                  {currentOfficer.clearance.replaceAll('_', ' ')}
-                </span>
-                <h2 className="text-xl font-black text-white uppercase tracking-wider mt-1.5">{currentOfficer.fullName}</h2>
-                <p className="text-xs text-slate-400 font-mono mt-1">
-                  SERVICE NO: {currentOfficer.serviceNumber} · RANK: {currentOfficer.rank}
-                </p>
-              </div>
-            </div>
+      {/* ── ADD PERSONNEL MODAL ── */}
+      <AnimatePresence>
+        {addOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.93, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.93, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="relative w-full max-w-lg overflow-hidden rounded-xl border border-sky-500/30 bg-[#040810] p-6 shadow-2xl"
+            >
+              <div className="absolute inset-x-0 top-0 h-[2px] bg-sky-500" />
 
-            <div className="text-right font-mono text-xs text-slate-500">
-              <span>ACTIVE DEPLOYMENT POSTURE</span>
-              <span className="text-sm font-black text-emerald-400 block mt-1 uppercase">
-                {currentOfficer.status.replaceAll('_', ' ')}
-              </span>
-            </div>
-          </div>
-
-          {/* Officer Details Grid */}
-          <div className="mt-6 grid gap-4 md:grid-cols-2 text-xs font-mono">
-            <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
-              <p className="text-slate-500 uppercase text-[9px] tracking-wider">UNIT ASSIGNMENT</p>
-              <p className="text-sm font-bold text-white uppercase">{currentOfficer.unit}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-900 bg-slate-950 p-4 space-y-2">
-              <p className="text-slate-500 uppercase text-[9px] tracking-wider">OFFICER ASSIGNED ROLE</p>
-              <p className="text-sm font-bold text-white uppercase">{currentOfficer.role}</p>
-            </div>
-          </div>
-
-          {/* Animated Service Ribbons */}
-          <div className="mt-6 border-t border-slate-900 pt-6">
-            <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">DECORATIONS & SERVICE RIBBONS</h3>
-            <div className="flex flex-wrap gap-3">
-              {currentOfficer.ribbons.map((ribbon: string) => (
-                <div 
-                  key={ribbon} 
-                  className="rounded-xl border border-sky-500/20 bg-sky-500/5 px-4 py-3 text-center min-w-[120px] relative overflow-hidden group hover:border-sky-400/40 transition-all duration-300"
-                >
-                  {/* Decorative stripes on ribbons */}
-                  <div className="absolute top-0 inset-x-0 h-1 bg-sky-500"></div>
-                  <div className="absolute bottom-0 inset-x-0 h-1 bg-sky-500"></div>
-                  <div className="absolute inset-y-0 left-3 w-1 bg-amber-500"></div>
-                  <div className="absolute inset-y-0 right-3 w-1 bg-amber-500"></div>
-                  
-                  <span className="text-[10px] font-black text-white block uppercase tracking-wide pt-1">{ribbon}</span>
+              <div className="flex items-center justify-between border-b border-slate-800/60 pb-4">
+                <div className="flex items-center gap-2 text-sky-400">
+                  <UserPlus className="h-4 w-4" />
+                  <h4 className="text-xs font-black uppercase tracking-widest">Add Personnel</h4>
                 </div>
-              ))}
-            </div>
-          </div>
+                <button type="button" onClick={closeAddModal} className="rounded-lg bg-slate-900 p-1.5 text-slate-400 hover:text-white">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
 
-          {/* Operational logs */}
-          <div className="mt-6 border-t border-slate-900 pt-6">
-            <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">RECENT DEPLOYMENT ACTIVITY LOGS</h3>
-            <div className="space-y-3">
-              {currentOfficer.history.map((log: { date: string; detail: string }) => (
-                <div key={log.date} className="rounded-2xl border border-slate-900 bg-slate-950/60 p-4 text-xs font-mono">
-                  <div className="flex justify-between text-[10px] text-slate-500 pb-2 border-b border-slate-900 mb-2">
-                    <span>ACTION DISPATCH</span>
-                    <span>{log.date}</span>
+              {createdCredentials ? (
+                <div className="mt-5 space-y-4">
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <p className="text-xs font-black uppercase tracking-wider">Account created</p>
                   </div>
-                  <p className="text-slate-300 uppercase leading-relaxed">{log.detail}</p>
+                  <p className="text-[11px] font-mono text-slate-400">
+                    Share this temporary password with {createdCredentials.serviceNumber} — it won't be shown again. They'll be required to change it on first sign-in.
+                  </p>
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5">
+                    <code className="flex-1 text-xs text-emerald-300">{createdCredentials.temporaryPassword}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(createdCredentials.temporaryPassword).then(() => toast.success('Copied.'));
+                      }}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeAddModal}
+                    className="w-full rounded-lg bg-sky-500/15 py-2 text-[10px] font-black uppercase text-sky-300 transition hover:bg-sky-500/25"
+                  >
+                    Done
+                  </button>
                 </div>
-              ))}
-            </div>
+              ) : (
+                <div className="mt-5 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      placeholder="Full name *"
+                      value={addForm.fullName}
+                      onChange={(e) => setAddForm((f) => ({ ...f, fullName: e.target.value }))}
+                      className="col-span-2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:border-sky-500/40 focus:outline-none"
+                    />
+                    <input
+                      placeholder="Service number *"
+                      value={addForm.serviceNumber}
+                      onChange={(e) => setAddForm((f) => ({ ...f, serviceNumber: e.target.value }))}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:border-sky-500/40 focus:outline-none"
+                    />
+                    <select
+                      value={addForm.rankCode}
+                      onChange={(e) => setAddForm((f) => ({ ...f, rankCode: e.target.value }))}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white focus:border-sky-500/40 focus:outline-none"
+                    >
+                      <option value="">Rank *</option>
+                      {formOptions?.ranks.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}
+                    </select>
+                    <select
+                      value={addForm.directorateCode}
+                      onChange={(e) => setAddForm((f) => ({ ...f, directorateCode: e.target.value }))}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white focus:border-sky-500/40 focus:outline-none"
+                    >
+                      <option value="">Directorate *</option>
+                      {formOptions?.directorates.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
+                    </select>
+                    <select
+                      value={addForm.roleCode}
+                      onChange={(e) => setAddForm((f) => ({ ...f, roleCode: e.target.value }))}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white focus:border-sky-500/40 focus:outline-none"
+                    >
+                      {ASSIGNABLE_ROLES.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}
+                    </select>
+                    <input
+                      placeholder="Email (optional)"
+                      value={addForm.email}
+                      onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:border-sky-500/40 focus:outline-none"
+                    />
+                    <input
+                      placeholder="Phone (optional)"
+                      value={addForm.phoneNumber}
+                      onChange={(e) => setAddForm((f) => ({ ...f, phoneNumber: e.target.value }))}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:border-sky-500/40 focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={addSubmitting}
+                    onClick={handleCreate}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-sky-500/15 py-2.5 text-[10px] font-black uppercase text-sky-300 transition hover:bg-sky-500/25 disabled:opacity-50"
+                  >
+                    {addSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Create Account
+                  </button>
+                </div>
+              )}
+            </motion.div>
           </div>
-        </div>
-      </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

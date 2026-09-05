@@ -119,7 +119,7 @@ export default function InspectionsPage() {
     const pendingCount = inspections.filter((inspection) =>
       ['submitted', 'under_review'].includes(inspection.status)
     ).length;
-    const totalQuestions = modules.length;
+    const departmentCount = modules.length;
 
     return (
       <div className="space-y-6">
@@ -130,7 +130,33 @@ export default function InspectionsPage() {
             <ClipboardCheck className="h-8 w-8 animate-pulse text-sky-400/40" />
           </div>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-1">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <NavLink
+              to="/inspections/questions"
+              className="group rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 transition hover:border-sky-500/35 hover:bg-slate-950"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-500/25 bg-sky-500/10">
+                    <FileQuestion className="h-5 w-5 text-sky-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white">Questions</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      Set and update evaluation templates. Grant yourself editing access per department before making changes.
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-slate-600 transition group-hover:text-sky-300" />
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-800/50 pt-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">Departments</p>
+                  <p className="mt-1 text-2xl font-black tabular-nums text-white">{departmentCount}</p>
+                </div>
+              </div>
+            </NavLink>
+
             <NavLink
               to="/inspections/reviews"
               className="group rounded-xl border border-slate-800/60 bg-slate-950/70 p-5 transition hover:border-emerald-500/35 hover:bg-slate-950"

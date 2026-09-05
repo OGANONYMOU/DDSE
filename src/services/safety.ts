@@ -252,3 +252,125 @@ export async function closeCorrectiveAction(
 export async function getHazardsByProject(projectId: string): Promise<HazardAssessment[]> {
   return listHazards({ projectId });
 }
+
+// ─── Evaluate: risk/compliance assessment ──────────────────────────────────────
+
+export async function updateHazardFields(
+  id: string,
+  patch: Partial<Pick<HazardAssessment, 'riskLevel' | 'complianceStatus' | 'observations'>>,
+  userId: string
+): Promise<void> {
+  const updates: Record<string, unknown> = { updated_by: userId };
+  if (patch.riskLevel !== undefined)        updates.risk_level = patch.riskLevel;
+  if (patch.complianceStatus !== undefined) updates.compliance_status = patch.complianceStatus;
+  if (patch.observations !== undefined)     updates.observations = patch.observations;
+
+  const { error } = await supabase.from('hazard_assessments').update(updates).eq('id', id);
+  if (error) throw error;
+
+  await logAuditEvent('hazard.assessment_updated', {
+    entityType: 'hazard',
+    entityId:   id,
+    metadata:   patch,
+  });
+}
+
+export async function addCheckItem(
+  assessmentId: string,
+  prompt: string,
+  displayOrder: number
+): Promise<HazardCheckItem> {
+  const { data, error } = await supabase
+    .from('hazard_check_items')
+    .insert({ assessment_id: assessmentId, prompt, display_order: displayOrder })
+    .select()
+    .single();
+  if (error) throw error;
+  return dbToCheckItem(data as Record<string, unknown>);
+}
+
+export async function updateCheckItem(
+  id: string,
+  patch: { compliant: boolean | null; notes?: string | null },
+  userId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('hazard_check_items')
+    .update({
+      compliant:  patch.compliant,
+      notes:      patch.notes ?? null,
+      checked_by: userId,
+      checked_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Manage: corrective actions ────────────────────────────────────────────────
+
+export async function addCorrectiveAction(
+  assessmentId: string,
+  payload: {
+    recommendation: string;
+    department?:    string | null;
+    urgency:        HazardCorrectiveAction['urgency'];
+    dueDate?:       string | null;
+  },
+  userId: string
+): Promise<HazardCorrectiveAction> {
+  const { data, error } = await supabase
+    .from('hazard_corrective_actions')
+    .insert({
+      assessment_id:  assessmentId,
+      recommendation: payload.recommendation,
+      department:     payload.department ?? null,
+      urgency:        payload.urgency,
+      due_date:       payload.dueDate ?? null,
+      created_by:     userId,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+
+  await logAuditEvent('hazard.corrective_action_created', {
+    entityType: 'hazard_corrective_action',
+    entityId:   String(data.id),
+    metadata:   { assessmentId, urgency: payload.urgency },
+  });
+
+  return dbToCA(data as Record<string, unknown>);
+}
+
+export async function startCorrectiveAction(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('hazard_corrective_actions')
+    .update({ status: 'in_progress' })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Manage: escalation ─────────────────────────────────────────────────────────
+
+export async function escalateHazard(
+  assessmentId: string,
+  payload: { escalatedToRole: string; reason: string },
+  userId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('hazard_escalations')
+    .insert({
+      assessment_id:     assessmentId,
+      escalated_by:      userId,
+      escalated_to_role: payload.escalatedToRole,
+      reason:            payload.reason,
+    });
+  if (error) throw error;
+
+  await updateHazardWorkflow(assessmentId, 'escalated', userId);
+
+  await logAuditEvent('hazard.escalated', {
+    entityType: 'hazard',
+    entityId:   assessmentId,
+    metadata:   payload,
+  });
+}

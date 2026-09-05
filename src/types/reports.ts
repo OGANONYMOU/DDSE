@@ -41,6 +41,7 @@ export interface Report {
   approvedBy:       string | null;
   approvedByName:   string | null;
   approvedAt:       string | null;
+  reviewNote:       string | null;
   createdAt:        string;
   updatedAt:        string;
   findings?:        ReportFinding[];

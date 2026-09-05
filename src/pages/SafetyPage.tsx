@@ -1,23 +1,36 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldAlert, Search } from 'lucide-react';
+import { ShieldAlert, Search, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { useDebounce } from '../hooks/useDebounce';
+import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/ui/PageHeader';
 import RiskBadge from '../components/safety/RiskBadge';
 import ComplianceIndicator from '../components/safety/ComplianceIndicator';
 import WorkflowBadge from '../components/safety/WorkflowBadge';
 import HazardEmergency from '../components/HazardEmergency';
-import { listHazards } from '../services/safety';
-import type { HazardAssessment, SafetyRiskLevel, SafetyWorkflow } from '../types/safety';
+import { listHazards, createHazardAssessment } from '../services/safety';
+import type { HazardAssessment, HazardCategory, SafetyRiskLevel, SafetyWorkflow } from '../types/safety';
 
 type RiskFilter     = SafetyRiskLevel | 'all';
 type WorkflowFilter = SafetyWorkflow  | 'all';
 
 const RISK_FILTERS: RiskFilter[]         = ['all', 'CRITICAL', 'HIGH', 'MODERATE', 'LOW'];
 const WORKFLOW_FILTERS: WorkflowFilter[] = ['all', 'open', 'investigating', 'action_required', 'escalated', 'resolved', 'closed'];
+const RISK_LEVELS: SafetyRiskLevel[]     = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'];
+
+const HAZARD_CATEGORIES: HazardCategory[] = [
+  'Electrical Safety', 'Ventilation', 'Hazardous Substances', 'Fueling Operations',
+  'Noise Control', 'Material Handling', 'Fire Protection', 'PPE Compliance',
+  'Walkways & Access', 'Equipment Safety',
+];
+
+// Mirrors the `hazards_insert` RLS policy on public.hazard_assessments.
+const CAN_IDENTIFY_HAZARD_ROLES = ['platform_owner', 'super_admin', 'director', 'commander', 'admin', 'safety_officer', 'inspection_officer'];
 
 export default function SafetyPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [search,          setSearch]          = useState('');
   const [riskF,           setRiskF]           = useState<RiskFilter>('all');
   const [workF,           setWorkF]           = useState<WorkflowFilter>('all');
@@ -26,7 +39,16 @@ export default function SafetyPage() {
   const [error,           setError]           = useState<string | null>(null);
   const debouncedSearch                       = useDebounce(search, 250);
 
-  useEffect(() => {
+  const [showCreate,   setShowCreate]   = useState(false);
+  const [newTitle,     setNewTitle]     = useState('');
+  const [newCategory,  setNewCategory]  = useState<HazardCategory>(HAZARD_CATEGORIES[0]);
+  const [newRisk,      setNewRisk]      = useState<SafetyRiskLevel>('MODERATE');
+  const [newObs,       setNewObs]       = useState('');
+  const [creating,     setCreating]     = useState(false);
+
+  const canIdentifyHazard = CAN_IDENTIFY_HAZARD_ROLES.includes(user.roleCode);
+
+  const load = () => {
     setLoading(true);
     setError(null);
     listHazards({
@@ -37,7 +59,41 @@ export default function SafetyPage() {
       .then(setAllAssessments)
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [debouncedSearch, riskF, workF]);
+  };
+
+  useEffect(load, [debouncedSearch, riskF, workF]);
+
+  async function handleCreate() {
+    if (!newTitle.trim()) { toast.error('Enter a hazard title.'); return; }
+    setCreating(true);
+    try {
+      const created = await createHazardAssessment({
+        projectId:        null,
+        projectName:      null,
+        projectCode:      null,
+        directorateCode:  user.directorateCode,
+        category:         newCategory,
+        hazardTitle:      newTitle.trim(),
+        riskLevel:        newRisk,
+        complianceStatus: 'under_review',
+        workflowStatus:   'open',
+        observations:     newObs.trim() || null,
+        inspectorId:      user.id,
+        inspectorName:    user.fullName,
+        classification:   'INTERNAL',
+        createdBy:        user.id,
+      }, user.id);
+      toast.success('Hazard identified — assessment created.');
+      setShowCreate(false);
+      setNewTitle('');
+      setNewObs('');
+      navigate(`/safety/${created.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not create assessment.');
+    } finally {
+      setCreating(false);
+    }
+  }
 
   const counts = {
     total:        allAssessments.length,
@@ -51,7 +107,85 @@ export default function SafetyPage() {
       <PageHeader
         title="Safety Assessments"
         subtitle="Hazard identification, risk monitoring & compliance enforcement"
+        action={
+          canIdentifyHazard ? (
+            <button
+              type="button"
+              onClick={() => setShowCreate((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Assessment
+            </button>
+          ) : undefined
+        }
       />
+
+      {showCreate && canIdentifyHazard && (
+        <div className="rounded-xl border border-sky-500/20 bg-slate-950/70 p-5 space-y-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Identify a hazard</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-600">Hazard title</label>
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="e.g. Exposed wiring near fuel storage"
+                className="w-full rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-sky-500/40"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-600">Category</label>
+              <select
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value as HazardCategory)}
+                className="w-full rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-[12px] text-white outline-none focus:border-sky-500/40"
+                style={{ colorScheme: 'dark' }}
+              >
+                {HAZARD_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-600">Initial risk level</label>
+              <select
+                value={newRisk}
+                onChange={(e) => setNewRisk(e.target.value as SafetyRiskLevel)}
+                className="w-full rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-[12px] text-white outline-none focus:border-sky-500/40"
+                style={{ colorScheme: 'dark' }}
+              >
+                {RISK_LEVELS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-600">Observations</label>
+              <textarea
+                value={newObs}
+                onChange={(e) => setNewObs(e.target.value)}
+                rows={3}
+                placeholder="What did you observe on site?"
+                className="w-full resize-none rounded-lg border border-slate-800/80 bg-slate-900/60 px-3 py-2 text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-sky-500/40"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCreate(false)}
+              className="rounded-lg border border-slate-800/60 bg-slate-900/40 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-500 transition hover:text-slate-300"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={creating}
+              onClick={() => void handleCreate()}
+              className="rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-sky-300 transition hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {creating ? 'Creating…' : 'Create Assessment'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
